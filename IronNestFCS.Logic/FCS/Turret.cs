@@ -26,10 +26,14 @@ public class Turret {
         }
 
         _turret.DesiredRotation = -angle;
+        LastSetAngle = angle;
         yield return new WaitForSeconds(1f);
         while (_turret.rotationVelocity != 0) {
             yield return new WaitForSeconds(1f);
         }
     }
-    
+
+    /// <summary>最近一次 SetRotation 的目标角度，同优先级任务按此排序以减少转动</summary>
+    public float LastSetAngle { get; private set; }
+
 }

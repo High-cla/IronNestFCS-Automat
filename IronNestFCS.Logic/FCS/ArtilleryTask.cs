@@ -23,4 +23,6 @@ public class ArtilleryTask {
     public Vector3 position;
     public BulletType bulletType;
     public Progress progress;
+    /// <summary>为 true 时强制满装药量(6包)，覆盖用户全局 maxCharge 设置</summary>
+    public bool useMaxCharge;
 }

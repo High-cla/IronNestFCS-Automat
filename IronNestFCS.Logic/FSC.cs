@@ -142,6 +142,16 @@ public class FSC
         TryDispatch();
     }
 
+    /// <summary>插队：任务放到队列最前面，用于高优先级目标</summary>
+    public void EnqueueTaskFront(ArtilleryTask task) {
+        task.progress = Progress.Pending;
+        var existing = _taskQueue.ToArray();
+        _taskQueue.Clear();
+        _taskQueue.Enqueue(task);
+        foreach (var t in existing) _taskQueue.Enqueue(t);
+        TryDispatch();
+    }
+
     /// <summary>把队首任务派给空闲炮管，直到没有空闲炮管或队列空。</summary>
     private void TryDispatch() {
         while (_taskQueue.Count > 0) {
@@ -188,7 +198,7 @@ public class FSC
         // 否则热重载后旧 ALC 的它仍被 Unity 驱动 → 崩溃。
         _runningCoroutines.Add(MelonCoroutines.Start(ReserveTurretAndRotate(task, turret)));
         
-        var powderCount = _sceneInteractor.maxCharge ? 6 : BallisticCalculator.MinimumCharge(task.distance);
+        var powderCount = task.useMaxCharge ? 6 : _sceneInteractor.maxCharge ? 6 : BallisticCalculator.MinimumCharge(task.distance);
 
         // ===== 临界区 1：解算 =====
         // 弹道计算器 / 确认台 / 采购台都是全局唯一硬件，必须串行。算完仰角即放，
