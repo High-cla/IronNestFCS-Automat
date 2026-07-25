@@ -10,7 +10,8 @@ public class MapTable {
     public Dictionary<int, Transform> artilleries;
     public Transform? fireMissionRoot;
     public FireMission? FireMission;
-    
+    private Transform? mapSurface;
+
     public bool TryBind() {
         artilleries = new Dictionary<int, Transform>();
         var turretObject = GameObject.Find("Player Turret Piece");
@@ -26,6 +27,7 @@ public class MapTable {
         }
 
         turret = turretObject.transform;
+        mapSurface = mapObject.transform;
         var map = mapObject.transform;
         for (var i = 0; i < map.childCount; ++i) {
             var t = map.GetChild(i);
@@ -68,6 +70,22 @@ public class MapTable {
             position = artilleries[index].localPosition * 3.8164f + new Vector3(10.016f, 5.235f, 0f)
         };
         return task;
+    }
+
+    public void SetMarkerWorldPos(int index, Vector3 worldPos)
+    {
+        if (!artilleries.TryGetValue(index, out var marker)) return;
+        if (mapSurface == null) return;
+        var local = mapSurface.InverseTransformPoint(worldPos);
+        local.z = marker.localPosition.z;
+        marker.localPosition = local;
+    }
+
+    public void ResetMarker(int index)
+    {
+        if (!artilleries.TryGetValue(index, out var marker)) return;
+        if (turret == null) return;
+        marker.localPosition = turret.localPosition;
     }
 
     public List<EntityLocation> GetAllFireMissionEntities() {

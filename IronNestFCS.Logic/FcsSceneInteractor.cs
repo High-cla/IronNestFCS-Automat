@@ -123,7 +123,17 @@ public class FcsSceneInteractor {
     /// <summary>任务完成回调</summary>
     public void TaskFinished(ArtilleryTask task) {
     }
-    
+
+    /// <summary>键盘快捷键触发射击目标（对应小键盘 1-4）</summary>
+    public void FireTarget(int targetId) {
+        if (!targetButtons.TryGetValue(targetId, out var button)) return;
+        var task = fcs.MapTable.GetMarkTarget(targetId);
+        if (task == null) return;
+        task.targetId = targetId;
+        task.bulletType = selectedBulletType;
+        fcs.EnqueueTask(task);
+    }
+
     public void Update() {
         clicks.Update();
     }

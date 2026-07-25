@@ -99,7 +99,12 @@ public class FSC
     public void Update() {
         _sceneInteractor.Update();
     }
-    
+
+    /// <summary>键盘快捷键触发射击目标（小键盘 1-4）</summary>
+    public void FireTarget(int targetId) {
+        _sceneInteractor.FireTarget(targetId);
+    }
+
     /// <summary>释放：撤销补丁、清空 IL2CPP 引用。</summary>
     public void Dispose()
     {
@@ -176,6 +181,14 @@ public class FSC
     private void StartTaskRoutine(LeftRight leftRight, ArtilleryTask task) {
         var handle = MelonCoroutines.Start(RunTaskRoutine(leftRight, task));
         _runningCoroutines.Add(handle);
+    }
+
+    /// <summary>任一炮管退膛时触发回调（WaitBackToIdle 完成后）。供雷达层刷新队列。</summary>
+    public event Action? OnGunIdle;
+
+    /// <summary>清空待处理队列（不碰正在执行的任务）。</summary>
+    public void ClearPendingTasks() {
+        _taskQueue.Clear();
     }
 
     /// <summary>炮管打完一发后释放槽位并尝试拉取队列里的下一个任务。</summary>
@@ -299,8 +312,9 @@ public class FSC
         yield return gunSys.WaitBackToIdle();
         task.progress = Progress.Finished;
         _sceneInteractor.TaskFinished(task);
-        // 释放炮管槽位，自动拉取队列里的下一个任务。
         ReleaseSlot(leftRight);
+        // 通知雷达：有一门炮退膛完毕，可以刷新队列了
+        try { OnGunIdle?.Invoke(); } catch { }
     }
 
     /// <summary>

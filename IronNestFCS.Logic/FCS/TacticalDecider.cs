@@ -14,11 +14,13 @@ public static class TacticalDecider
     public struct TargetInfo
     {
         public string Name;
-        public float Angle;      // 方向角 (0-360)
-        public float Distance;   // 距离 km
-        public int Priority;     // 0-5
+        public float Angle;
+        public float Distance;
+        public int Priority;     // 5:火炮/FDC, 4:弹药库/高价值, 3:装甲/工事, 2:普通, 1:灰区
         public bool IsArmored;
+        public bool IsUnderground;
         public Vector3 WorldPos;
+        public int ChildIndex;
     }
 
     /// <summary>
@@ -38,25 +40,10 @@ public static class TacticalDecider
         });
     }
 
-    /// <summary>
-    /// 根据目标特征推荐弹种。只改这里的映射表即可调优。
-    /// </summary>
-    public static BulletType PickAmmo(TargetInfo t)
-    {
-        // 高价值（火炮/FDC/工事）→ HCHE 大范围高毁伤
-        if (t.Priority >= 3)
-            return BulletType.HCHE;
-        // 装甲 → AP 穿甲
-        if (t.IsArmored)
-            return BulletType.AP;
-        // 默认 HE
-        return BulletType.HE;
-    }
-
-    /// <summary>高价值目标自动满装药 (6包)</summary>
+    /// <summary>高价值目标自动满装药（优先 5 和 4）</summary>
     public static bool ShouldUseMaxCharge(TargetInfo t)
     {
-        return t.Priority >= 3;
+        return t.Priority >= 4;
     }
 
     /// <summary>两个角度之间的最小差值 [0, 180]</summary>
