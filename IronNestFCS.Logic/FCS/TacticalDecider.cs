@@ -26,8 +26,9 @@ public static class TacticalDecider
     }
 
     /// <summary>
-    /// 排序：优先级降序 → 同优先级按总时间成本升序。
-    /// cost = distance*2 + angleDelta*0.2：距离开销(仰角上下)远大于转向开销。
+    /// 排序：优先级降序 → 同优先级按总机械时间升序。
+    /// 实测：高低机 0→60 = 32s (1.875/s)，方向机 84→0° = 25s (3.36°/s)。
+    /// cost ≈ 仰角上下时间 + 炮塔转动时间 = distance×2.56 + angleDelta×0.30（秒）
     /// </summary>
     public static void SortTargets(List<TargetInfo> targets, float currentAngle)
     {
@@ -36,8 +37,8 @@ public static class TacticalDecider
             int pc = b.Priority.CompareTo(a.Priority);
             if (pc != 0) return pc;
 
-            float costA = a.Distance * 2f + AngleDelta(currentAngle, a.Angle) * 0.2f;
-            float costB = b.Distance * 2f + AngleDelta(currentAngle, b.Angle) * 0.2f;
+            float costA = a.Distance * 2.56f + AngleDelta(currentAngle, a.Angle) * 0.30f;
+            float costB = b.Distance * 2.56f + AngleDelta(currentAngle, b.Angle) * 0.30f;
             return costA.CompareTo(costB);
         });
     }
