@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using Il2Cpp;
 using IronNestFCS.Abstractions;
 using IronNestFCS.Logic.FCS;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Object = UnityEngine.Object;
 
 namespace IronNestFCS.Logic;
 
@@ -37,6 +39,8 @@ public class FcsModule : IFcsModule
         nextSweepTime = Time.time + 0.5f;
 
         if (radar == null || !fcs.IsBound) return;
+        // 每次退膛后自动收紧所有蒸汽阀门
+        AdjustAllValves(0f);
         radar.Scan();
 
         // 清空等待队列（不碰正在执行的任务）
@@ -133,5 +137,33 @@ public class FcsModule : IFcsModule
         fcs.Dispose();
         window = null;
         radar = null;
+    }
+
+    /// <summary>找到所有蒸汽泄漏点，收紧最近阀门到指定值（0=拧紧, 999=全开）</summary>
+    private static void AdjustAllValves(float value)
+    {
+        var dials = new List<(DialInteractable di, Vector3 pos)>();
+        foreach (var go in Object.FindObjectsOfType<GameObject>(true))
+        {
+            var di = go.GetComponent<DialInteractable>();
+            if (di != null) dials.Add((di, go.transform.position));
+        }
+        int done = 0;
+        foreach (var go in Object.FindObjectsOfType<GameObject>(true))
+        {
+            if (go == null || !go.name.ToLower().Contains("steam leak")) continue;
+            DialInteractable? nearest = null;
+            float minDist = float.MaxValue;
+            foreach (var (di, pos) in dials)
+            {
+                var d = (pos - go.transform.position).magnitude;
+                if (d < minDist) { minDist = d; nearest = di; }
+            }
+            if (nearest == null) continue;
+            nearest.SetDialValue(value);
+            done++;
+        }
+        if (done > 0)
+            MelonLogger.Msg($"[FCS] 已自动拧紧 {done} 个阀门");
     }
 }
