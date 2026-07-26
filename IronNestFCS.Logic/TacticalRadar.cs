@@ -78,13 +78,12 @@ public class TacticalRadar
 
             int priority = CalcPriority(role, icon, stars);
             bool isArmored = (role & RoleFortification) != 0 || (role & RoleTank) != 0
-                             || (role & RoleAmmo) != 0;  // 弹药库/隐蔽处需要 AP 穿透
+                             || (role & RoleAmmo) != 0       // 弹药库
+                             || (role & RoleHighValue) != 0  // 补给/高价值仓库
+                             || icon.IndexOf("ammunition", StringComparison.OrdinalIgnoreCase) >= 0
+                             || icon.IndexOf("cache", StringComparison.OrdinalIgnoreCase) >= 0
+                             || icon.IndexOf("supply", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isUnderground = IsUnderground(child.name, icon);
-
-            // ponytail: log only underground/high-value targets, not every grunt
-            if (isUnderground || priority >= 4)
-                MelonLogger.Msg($"[Radar] {child.name} icon='{icon}' prio={priority} " +
-                                $"armored={isArmored} underground={isUnderground} immune=[{string.Join(",", immuneShells)}]");
 
             targets.Add(new TacticalDecider.TargetInfo
             {
