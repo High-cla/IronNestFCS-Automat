@@ -26,8 +26,8 @@ public static class TacticalDecider
     }
 
     /// <summary>
-    /// 排序：优先级降序 → 同优先级按与炮塔朝向的角度差升序。
-    /// 减少炮塔来回转动的总时间。
+    /// 排序：优先级降序 → 同优先级按总时间成本升序。
+    /// cost = distance*2 + angleDelta*0.2：距离开销(仰角上下)远大于转向开销。
     /// </summary>
     public static void SortTargets(List<TargetInfo> targets, float currentAngle)
     {
@@ -36,9 +36,9 @@ public static class TacticalDecider
             int pc = b.Priority.CompareTo(a.Priority);
             if (pc != 0) return pc;
 
-            float adA = AngleDelta(currentAngle, a.Angle);
-            float adB = AngleDelta(currentAngle, b.Angle);
-            return adA.CompareTo(adB);
+            float costA = a.Distance * 2f + AngleDelta(currentAngle, a.Angle) * 0.2f;
+            float costB = b.Distance * 2f + AngleDelta(currentAngle, b.Angle) * 0.2f;
+            return costA.CompareTo(costB);
         });
     }
 
