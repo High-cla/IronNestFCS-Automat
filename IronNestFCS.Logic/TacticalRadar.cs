@@ -30,6 +30,7 @@ public class TacticalRadar
 
     private readonly FSC fcs;
     private readonly HashSet<int> sweptIndices = new();
+    private static bool entityPropsDumped;  // 一次性 dump Entity 所有属性名
 
     public bool AutoPlaceMarkers { get; set; } = true;
     public List<TacticalDecider.TargetInfo> AliveHostiles { get; private set; } = new();
@@ -76,11 +77,14 @@ public class TacticalRadar
             if (!isHostile) continue;
 
             int priority = CalcPriority(role, icon, stars);
-            bool isArmored = (role & RoleFortification) != 0 || (role & RoleTank) != 0;
+            bool isArmored = (role & RoleFortification) != 0 || (role & RoleTank) != 0
+                             || (role & RoleAmmo) != 0;  // 弹药库/隐蔽处需要 AP 穿透
             bool isUnderground = IsUnderground(child.name, icon);
 
-            MelonLogger.Msg($"[Radar] {child.name} icon='{icon}' prio={priority} " +
-                            $"armored={isArmored} underground={isUnderground} immune=[{string.Join(",", immuneShells)}]");
+            // ponytail: log only underground/high-value targets, not every grunt
+            if (isUnderground || priority >= 4)
+                MelonLogger.Msg($"[Radar] {child.name} icon='{icon}' prio={priority} " +
+                                $"armored={isArmored} underground={isUnderground} immune=[{string.Join(",", immuneShells)}]");
 
             targets.Add(new TacticalDecider.TargetInfo
             {
@@ -98,6 +102,11 @@ public class TacticalRadar
 
         TacticalDecider.SortTargets(targets, fcs.Turret.LastSetAngle);
         AliveHostiles = targets;
+
+        // 每次扫描只打印一行汇总
+        var summary = string.Join(" | ", targets.Select(t =>
+            $"({t.Priority}){t.Name} {(t.IsUnderground ? "UG" : "")}{(t.IsArmored ? "ARM" : "")}"));
+        MelonLogger.Msg($"[Radar] {targets.Count} hostiles: {summary}");
 
         if (AutoPlaceMarkers)
         {
@@ -144,6 +153,18 @@ public class TacticalRadar
             if (entity == null) return false;
 
             var entType = entity.GetType();
+
+            // 一次性 dump Entity 全属性（找地下标记的数据源）
+            if (!entityPropsDumped)
+            {
+                entityPropsDumped = true;
+                MelonLogger.Msg($"[Radar] Entity properties for '{loc.name}':");
+                foreach (var p in entType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    try { MelonLogger.Msg($"[Radar]   .{p.Name} ({p.PropertyType.Name}) = {p.GetValue(entity)}"); }
+                    catch { MelonLogger.Msg($"[Radar]   .{p.Name} ({p.PropertyType.Name}) = <error>"); }
+                }
+            }
 
             var roleProp = entType.GetProperty("Role",
                 BindingFlags.Public | BindingFlags.Instance);
