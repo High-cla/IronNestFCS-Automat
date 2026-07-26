@@ -1,10 +1,13 @@
-using HarmonyInstance = HarmonyLib.Harmony;
+﻿using HarmonyInstance = HarmonyLib.Harmony;
 using System.Collections;
+using System.Linq;
+using System.Reflection;
 using Il2Cpp;
 using IronNestFCS.Logic.FCS;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.UI;
+using Object = UnityEngine.Object;
 
 namespace IronNestFCS.Logic;
 
@@ -91,9 +94,160 @@ public class FSC
                   && Turret.TryBind()
                   && TriggerConsole.TryBind();
         MelonLogger.Msg("[FCS] Initialize: " + (IsBound ? "success" : "failed"));
-        // _runningCoroutines.Add(MelonCoroutines.Start(ExposeAllEntities()));
-        
+        // 诊断：验证电报/参考点/侦察的技术可行性
+        if (IsBound) RunTelemetryScan();
+
         return IsBound;
+    }
+
+    /// <summary>
+    /// 一次性的场景诊断：找 Teleprinter（电报）、Spotter/Alpha 参考点、侦察相关组件。
+    /// 输出到日志供技术可行性判断。
+    /// </summary>
+    private void RunTelemetryScan()
+    {
+        try
+        {
+            // 1. 搜 Teleprinter / 电报 / 消息 相关
+            MelonLogger.Msg("[FCS] === Telemetry: Teleprinter / Message ===");
+            var allObjects = Object.FindObjectsOfType<Transform>(true);
+            foreach (var t in allObjects)
+            {
+                if (t.name.IndexOf("Teleprinter", StringComparison.OrdinalIgnoreCase) >= 0
+                    || t.name.IndexOf("Telegram", StringComparison.OrdinalIgnoreCase) >= 0
+                    || t.name.IndexOf("Printer", StringComparison.OrdinalIgnoreCase) >= 0
+                    || t.name.IndexOf("Briefing", StringComparison.OrdinalIgnoreCase) >= 0
+                    || t.name.IndexOf("Message", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    MelonLogger.Msg($"[FCS]   GameObject: '{t.name}'");
+                    foreach (var c in t.GetComponents<Component>())
+                    {
+                        if (c == null) continue;
+                        var type = c.GetType();
+                        MelonLogger.Msg($"[FCS]     Component: {type.Name}");
+                        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                        {
+                            try { MelonLogger.Msg($"[FCS]       .{prop.Name} = {prop.GetValue(c)}"); }
+                            catch { }
+                        }
+                    }
+                }
+                // 也搜组件类型名含关键字的
+                foreach (var c in t.GetComponents<Component>())
+                {
+                    if (c == null) continue;
+                    var typeName = c.GetType().Name;
+                    if (typeName.IndexOf("Teleprinter", StringComparison.OrdinalIgnoreCase) >= 0
+                        || typeName.IndexOf("Printer", StringComparison.OrdinalIgnoreCase) >= 0
+                        || typeName.IndexOf("Message", StringComparison.OrdinalIgnoreCase) >= 0
+                        || typeName.IndexOf("Briefing", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        MelonLogger.Msg($"[FCS]   Component type: {c.GetType().FullName} on '{t.name}'");
+                        foreach (var prop in c.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                        {
+                            try { MelonLogger.Msg($"[FCS]     .{prop.Name} = {prop.GetValue(c)}"); }
+                            catch { }
+                        }
+                    }
+                }
+            }
+
+            // 2. Teleprinter Radio 及子对象——递归 dump 所有组件
+            MelonLogger.Msg("[FCS] === Telemetry: Teleprinter Radio deep scan ===");
+            var radio = GameObject.Find("Teleprinter Radio");
+            if (radio != null)
+            {
+                DumpGameObjectRecursive(radio.transform, "  ");
+            }
+
+            // 3. 搜 Spotter / Alpha / Bravo / Charlie 参考点
+            MelonLogger.Msg("[FCS] === Telemetry: Spotter / Reference points ===");
+            foreach (var t in allObjects)
+            {
+                var low = t.name.ToLower();
+                if (low.Contains("spotter") || low.Contains("alpha") || low.Contains("bravo")
+                    || low.Contains("charlie") || low.Contains("reference")
+                    || low.Contains("observer") || low.Contains("movezone")
+                    || low.Contains("movedirection"))
+                {
+                    var loc = t.GetComponent<EntityLocation>();
+                    MelonLogger.Msg($"[FCS]   '{t.name}' pos={t.position}" +
+                                    (loc != null ? $" (has EntityLocation, enabled={t.gameObject.activeInHierarchy})" : ""));
+                }
+            }
+
+            // 3. Dump FireMission.Entities 的所有键（已有的地图实体）
+            MelonLogger.Msg("[FCS] === Telemetry: FireMission.Entities ===");
+            var fm = GameObject.Find("Fire Mission Root")?.GetComponent<FireMission>();
+            if (fm != null)
+            {
+                var entitiesProp = fm.GetType().GetProperty("Entities",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (entitiesProp != null)
+                {
+                    var entities = entitiesProp.GetValue(fm);
+                    if (entities != null)
+                    {
+                        var keysProp = entities.GetType().GetProperty("Keys",
+                            BindingFlags.Public | BindingFlags.Instance);
+                        if (keysProp != null)
+                        {
+                            var keys = keysProp.GetValue(entities);
+                            if (keys is IEnumerable keyEnum)
+                            {
+                                foreach (var k in keyEnum)
+                                    MelonLogger.Msg($"[FCS]   Entity key: '{k}'");
+                            }
+                        }
+                    }
+                }
+            }
+            MelonLogger.Msg("[FCS] === Telemetry scan complete ===");
+        }
+        catch (Exception ex)
+        {
+            MelonLogger.Warning($"[FCS] Telemetry scan: {ex.Message}");
+        }
+    }
+
+    public (bool hasTimer, string keys) PollRunningTimers()
+    {
+        try
+        {
+            var fm = GameObject.Find("Fire Mission Root")?.GetComponent<FireMission>();
+            if (fm == null) return (false, "no FireMission");
+
+            var timersProp = fm.GetType().GetProperty("RunningTimers",
+                BindingFlags.Public | BindingFlags.Instance);
+            if (timersProp == null) return (false, "no RunningTimers prop");
+
+            var timers = timersProp.GetValue(fm);
+            if (timers == null) return (false, "RunningTimers == null");
+
+            // 读 Count 属性
+            var countProp = timers.GetType().GetProperty("Count",
+                BindingFlags.Public | BindingFlags.Instance);
+            if (countProp == null) return (false, "no Count prop");
+
+            var count = (int)countProp.GetValue(timers);
+            if (count == 0) return (false, "0 timers");
+
+            // 读 Keys，拼接键名
+            var keysProp = timers.GetType().GetProperty("Keys",
+                BindingFlags.Public | BindingFlags.Instance);
+            if (keysProp == null) return (true, $"count={count}, no Keys prop");
+
+            var keys = keysProp.GetValue(timers);
+            if (keys is not IEnumerable keyEnum) return (true, $"count={count}, keys not IEnumerable");
+
+            var keyList = new List<string>();
+            foreach (var k in keyEnum) keyList.Add(k.ToString() ?? "?");
+            return (true, $"count={count}, keys=[{string.Join(", ", keyList)}]");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"error: {ex.Message}");
+        }
     }
 
     public void Update() {
@@ -210,7 +364,7 @@ public class FSC
         // 独立的 fire-and-forget 协程，必须登记以便 Dispose 时一并 Stop，
         // 否则热重载后旧 ALC 的它仍被 Unity 驱动 → 崩溃。
         _runningCoroutines.Add(MelonCoroutines.Start(ReserveTurretAndRotate(task, turret)));
-        
+
         var powderCount = task.useMaxCharge ? 6 : _sceneInteractor.maxCharge ? 6 : BallisticCalculator.MinimumCharge(task.distance);
 
         // ===== 临界区 1：解算 =====
@@ -218,6 +372,7 @@ public class FSC
         // 让另一管炮能立刻进来算它自己的弹道，与本管炮接下来的长装填段重叠。
         float elevation = 0f;
         bool viable = true;
+        bool slotReleased = false;
         yield return _deskLock.Acquire();
         try {
             task.progress = Progress.Calculating;
@@ -229,7 +384,7 @@ public class FSC
             elevation = BallisticCalculator.GetElevation();
 
             // 装药不足则补购。单次采购未必补满（且偶发点击早于卡牌入槽而失败），
-            // 故循环购买直到够本次发射所需，避免“装药不足但非 0”时直接推进、卡住后续装填。
+            // 故循环购买直到够本次发射所需，避免"装药不足但非 0"时直接推进、卡住后续装填。
             // 加购买次数上限兜底：采购始终无效时不至于无限循环（每次约 2.5s）。
             var powderPurchaseAttempts = 0;
             while (gunSys.RemainingCharges() < powderCount) {
@@ -238,19 +393,24 @@ public class FSC
                     MelonLogger.Error(
                         $"[FCS] {leftRight} 炮管：购买装药 {powderPurchaseAttempts} 次后仍不足 " +
                         $"{powderCount}（当前 {gunSys.RemainingCharges()}），停止补购。");
+                    // 补购失败＝任务不可行，与弹种缺失的处理一致
+                    task.progress = Progress.Failed;
+                    viable = false;
                     break;
                 }
             }
 
-            task.progress = Progress.SelectingBullet;
-            // 弹仓里没有目标弹种则采购（采购台也是共享硬件，放在锁内）。
-            if (!gunSys.HaveBulletInCylinder(task.bulletType)) {
-                if (!gunSys.HaveEmptyShellInCylinder()) {
-                    task.progress = Progress.Failed;
-                    viable = false;
-                }
-                else {
-                    yield return _purchaseDeck.BuyShell(task.bulletType, leftRight);
+            if (viable) {
+                task.progress = Progress.SelectingBullet;
+                // 弹仓里没有目标弹种则采购（采购台也是共享硬件，放在锁内）。
+                if (!gunSys.HaveBulletInCylinder(task.bulletType)) {
+                    if (!gunSys.HaveEmptyShellInCylinder()) {
+                        task.progress = Progress.Failed;
+                        viable = false;
+                    }
+                    else {
+                        yield return _purchaseDeck.BuyShell(task.bulletType, leftRight);
+                    }
                 }
             }
         }
@@ -258,63 +418,128 @@ public class FSC
             _deskLock.Release();
         }
 
-        if (!viable) {
-            // 任务不可行：取消炮塔预约并归还（后台若尚未抢到，会在抢到后自行归还），
-            // 并释放炮管槽位让队列里的下一个任务能用这管炮。
-            turret.Canceled = true;
-            ReleaseTurretOnce(turret);
-            ReleaseSlot(leftRight);
-            yield break;
-        }
-
-        // ===== 锁外：装填（每管炮独立，最耗时段，可与另一管炮全程并行）=====
-        task.progress = Progress.LoadingBullet;
-        yield return gunSys.LoadBullet(task.bulletType);
-        
-        
-        task.progress = Progress.LoadingPowder;
-        yield return gunSys.LoadPowder(powderCount);
-        task.progress = Progress.WaitLoading;
-        while (!gunSys.CanFire()) {
-            yield return new WaitForSeconds(1f);
-        }
-
-        // ===== 锁外：升仰角（每管炮独立，最耗时段之一）=====
-        // 仰角杆是本管炮专属，不碰共享硬件；此时后台多半已把方向角转好。
-        task.progress = Progress.Aiming;
-        yield return gunSys.SetElevation(elevation);
-
-        // ===== 临界区 2：击发 =====
-        // 此处不再现抢炮塔——炮塔早已由后台预约持有。只等它转到位（通常已就绪，瞬间通过），
-        // 然后确认+击发。炮塔锁一直由本任务持有，直到击发完成才归还。
-        task.progress = Progress.WaitingForFire;
-        while (!turret.Ready) {
-            yield return null;
-        }
         try {
-            yield return TriggerConsole.ConfirmTask();
-            yield return TriggerConsole.ConfirmBullet();
-            yield return TriggerConsole.ConfirmRotation();
-            yield return TriggerConsole.ConfirmElevation();
-            yield return TriggerConsole.ReadyToFire();
-            yield return TriggerConsole.Arm(leftRight);
-            if (_sceneInteractor.AutoFire) {
-                TriggerConsole.Fire();
+            if (!viable) {
+                // 任务不可行：取消炮塔预约并归还（后台若尚未抢到，会在抢到后自行归还），
+                // 并释放炮管槽位让队列里的下一个任务能用这管炮。
+                turret.Canceled = true;
+                ReleaseTurretOnce(turret);
+                ReleaseSlot(leftRight);
+                slotReleased = true;
+                yield break;
             }
-            yield return gunSys.WaitFire();
+
+            // ===== 锁外：装填（每管炮独立，最耗时段，可与另一管炮全程并行）=====
+            task.progress = Progress.LoadingBullet;
+            yield return gunSys.LoadBullet(task.bulletType);
+            // LoadBullet 只是点推弹杆按钮——炮弹从挂架到炮膛需要机械时间，
+            // 不能立刻读 BulletInChamber()，否则会误判为装填失败。
+            {
+                var chamberTimeout = 0;
+                while (gunSys.BulletInChamber() == null && chamberTimeout < 30) {
+                    yield return new WaitForSeconds(0.5f);
+                    chamberTimeout++;
+                }
+                if (gunSys.BulletInChamber() != task.bulletType.ToString()) {
+                    MelonLogger.Error($"[FCS] {leftRight} 炮管：装填后弹种不匹配，" +
+                                      $"期望 {task.bulletType}，实际 {gunSys.BulletInChamber() ?? "null"}");
+                    task.progress = Progress.Failed;
+                    yield break;
+                }
+            }
+
+            task.progress = Progress.LoadingPowder;
+            yield return gunSys.LoadPowder(powderCount);
+            task.progress = Progress.WaitLoading;
+            var loadTimeout = 0;
+            while (!gunSys.CanFire()) {
+                yield return new WaitForSeconds(1f);
+                if (++loadTimeout >= 120) { // 2 分钟超时
+                    MelonLogger.Error($"[FCS] {leftRight} 炮管：等待装填完成超时");
+                    task.progress = Progress.Failed;
+                    yield break;
+                }
+            }
+
+            // ===== 锁外：升仰角（每管炮独立，最耗时段之一）=====
+            // 仰角杆是本管炮专属，不碰共享硬件；此时后台多半已把方向角转好。
+            task.progress = Progress.Aiming;
+            yield return gunSys.SetElevation(elevation);
+
+            // ===== 临界区 2：击发 =====
+            // 此处不再现抢炮塔——炮塔早已由后台预约持有。只等它转到位（通常已就绪，瞬间通过），
+            // 然后确认+击发。炮塔锁一直由本任务持有，直到击发完成才归还。
+            task.progress = Progress.WaitingForFire;
+            // ponytail: 炮塔按固定角速度旋转，必然到达，无需超时。
+            // 超时 = 制造失败 = OnGunIdle 重新派任务 = 炮塔还在转又被抢 = 死循环。
+            while (!turret.Ready) {
+                yield return null;
+            }
+            try {
+                yield return TriggerConsole.ConfirmTask();
+                yield return TriggerConsole.ConfirmBullet();
+                yield return TriggerConsole.ConfirmRotation();
+                yield return TriggerConsole.ConfirmElevation();
+                yield return TriggerConsole.ReadyToFire();
+                yield return TriggerConsole.Arm(leftRight);
+                if (_sceneInteractor.AutoFire) {
+                    TriggerConsole.Fire();
+                }
+                yield return gunSys.WaitFire();
+            }
+            finally {
+                ReleaseTurretOnce(turret);
+            }
+
+            // ===== 锁外：回位（仰角回 0，每管炮独立，最耗时段之一）=====
+            task.progress = Progress.BackToIdle;
+            yield return gunSys.WaitBackToIdle();
+            task.progress = Progress.Finished;
+            _sceneInteractor.TaskFinished(task);
+            ReleaseSlot(leftRight);
+            slotReleased = true;
         }
         finally {
+            // 防泄漏：协程崩了或 yield break 没走到 ReleaseSlot 时兜底释放
+            if (!slotReleased) {
+                if (leftRight == LeftRight.Left) LeftTask = null;
+                else RightTask = null;
+                TryDispatch();
+            }
+            // 确保炮塔锁归还（已归还的 ReleaseTurretOnce 是幂等的）
             ReleaseTurretOnce(turret);
+            // 通知雷达：有一门炮退膛完毕，可以刷新队列了
+            try { OnGunIdle?.Invoke(); } catch { }
         }
+    }
 
-        // ===== 锁外：回位（仰角回 0，每管炮独立，最耗时段之一）=====
-        task.progress = Progress.BackToIdle;
-        yield return gunSys.WaitBackToIdle();
-        task.progress = Progress.Finished;
-        _sceneInteractor.TaskFinished(task);
-        ReleaseSlot(leftRight);
-        // 通知雷达：有一门炮退膛完毕，可以刷新队列了
-        try { OnGunIdle?.Invoke(); } catch { }
+    /// <summary>递归 dump GameObject 及其子对象上的非 Transform 组件</summary>
+    private static void DumpGameObjectRecursive(Transform t, string indent)
+    {
+        foreach (var c in t.GetComponents<Component>())
+        {
+            var type = c.GetType();
+            if (type == typeof(Transform) || type.Name == "Transform" || type.Name == "Component") continue;
+            MelonLogger.Msg($"[FCS] {indent}{t.name} => {type.Name}");
+            // 只打印非 Transform/GameObject 的属性
+            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (prop.Name is "transform" or "gameObject" or "tag" or "name" or "hideFlags"
+                    or "m_CachedPtr" or "ObjectClass" or "Pointer" or "WasCollected"
+                    or "transformHandle" or "constrainProportionsScale" or "rotationOrder"
+                    or "hierarchyCapacity" or "hierarchyCount")
+                    continue;
+                try
+                {
+                    var val = prop.GetValue(c);
+                    if (val != null && val.ToString() != val.GetType().FullName)
+                        MelonLogger.Msg($"[FCS] {indent}  .{prop.Name} = {val}");
+                }
+                catch { }
+            }
+        }
+        for (int i = 0; i < t.childCount; i++)
+            DumpGameObjectRecursive(t.GetChild(i), indent + "  ");
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using IronNestFCS.Abstractions;
 using IronNestFCS.Logic.FCS;
+using MelonLoader;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -14,7 +15,9 @@ public class FcsModule : IFcsModule
 
     private float lastScanTime;
     private float nextSweepTime;
+    private float lastCbtPollTime;
     private bool sweepActive;
+    private int lastCbtCount = -1;  // 检测 CBT timer 数量变化
 
     public bool Initialize()
     {
@@ -40,16 +43,16 @@ public class FcsModule : IFcsModule
         fcs.ClearPendingTasks();
 
         // 另一门炮正在打的目标编号，不要分配重复任务
-        int otherGunTarget = -1;
-        if (fcs.LeftTask != null) otherGunTarget = fcs.LeftTask.targetId;
-        if (fcs.RightTask != null) otherGunTarget = fcs.RightTask.targetId;
+        var busyTargets = new HashSet<int>();
+        if (fcs.LeftTask != null) busyTargets.Add(fcs.LeftTask.targetId);
+        if (fcs.RightTask != null) busyTargets.Add(fcs.RightTask.targetId);
 
         int added = 0;
         foreach (var t in radar.AliveHostiles)
         {
             if (added >= 2) break;
             // 不重复分配另一门炮正在打的目标
-            if (t.ChildIndex + 1 == otherGunTarget) continue;
+            if (busyTargets.Contains(t.ChildIndex + 1)) continue;
 
             var task = new ArtilleryTask
             {
@@ -57,7 +60,7 @@ public class FcsModule : IFcsModule
                 angel = t.Angle,
                 distance = t.Distance,
                 position = t.WorldPos,
-                bulletType = BulletType.AP,
+                bulletType = TacticalDecider.ChooseShellType(t),
                 useMaxCharge = TacticalDecider.ShouldUseMaxCharge(t)
             };
 
@@ -81,6 +84,19 @@ public class FcsModule : IFcsModule
             lastScanTime = Time.time;
         }
 
+        // 轮询 CBT 计时器（每 5s），数量变化时打日志
+        if (fcs.IsBound && Time.time - lastCbtPollTime > 5f)
+        {
+            lastCbtPollTime = Time.time;
+            var (hasTimer, info) = fcs.PollRunningTimers();
+            var currentCount = hasTimer ? 1 : 0;
+            if (currentCount != lastCbtCount)
+            {
+                lastCbtCount = currentCount;
+                MelonLogger.Msg($"[FCS] CBT {(hasTimer ? $"found: {info}" : $"poll: {info}")}");
+            }
+        }
+
         var kb = Keyboard.current;
         if (kb == null || !fcs.IsBound)
             return;
@@ -89,7 +105,8 @@ public class FcsModule : IFcsModule
         if (kb.numpad0Key.wasPressedThisFrame || (kb.ctrlKey.isPressed && kb.digit0Key.wasPressedThisFrame))
         {
             sweepActive = !sweepActive;
-            if (sweepActive) OnGunIdle();  // 立即触发首轮
+            nextSweepTime = 0;  // 重设时间窗，防止立即触发的首轮被防重入窗口跳过
+            if (sweepActive) OnGunIdle();
             return;
         }
 

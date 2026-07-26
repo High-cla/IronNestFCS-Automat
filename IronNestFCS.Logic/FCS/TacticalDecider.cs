@@ -16,11 +16,13 @@ public static class TacticalDecider
         public string Name;
         public float Angle;
         public float Distance;
-        public int Priority;     // 5:火炮/FDC, 4:弹药库/高价值, 3:装甲/工事, 2:普通, 1:灰区
+        public int Priority;     // 6:FDC, 5:火炮, 4:弹药库/高价值, 3:装甲/工事, 2:普通, 1:其他
         public bool IsArmored;
         public bool IsUnderground;
         public Vector3 WorldPos;
         public int ChildIndex;
+        /// <summary>目标免疫的弹种 ID 集合（如 {"HE"}），用于自动弹种选择</summary>
+        public HashSet<string> ImmuneShells;
     }
 
     /// <summary>
@@ -40,10 +42,38 @@ public static class TacticalDecider
         });
     }
 
-    /// <summary>高价值目标自动满装药（优先 5 和 4）</summary>
+    /// <summary>
+    /// 满装药唯一收益是缩短飞行时间，仅在 CBT 竞速时有价值。
+    /// 当前无法检测 CBT 状态，统一用最低装药。
+    /// 恢复时改为：t.Priority >= 5（仅火炮/FDC 满装抢时间）。
+    /// </summary>
     public static bool ShouldUseMaxCharge(TargetInfo t)
     {
-        return t.Priority >= 4;
+        return false;
+    }
+
+    /// <summary>
+    /// 自动弹种选择，成本优先：AP/HE = 3点，HCHE = 5点。
+    /// 装甲/地下 → AP（穿透），其余 → HE（通用）。
+    /// HCHE 仅作免疫降级备选。
+    /// </summary>
+    public static BulletType ChooseShellType(TargetInfo t)
+    {
+        var immune = t.ImmuneShells ?? new HashSet<string>();
+
+        // 首选：装甲/地下需要穿透，其余 HE 足以解决
+        BulletType primary = (t.IsArmored || t.IsUnderground) ? BulletType.AP : BulletType.HE;
+
+        if (!immune.Contains(primary.ToString()))
+            return primary;
+
+        // 首选被免疫 → 换另一个低成本弹种
+        var fallback = primary == BulletType.AP ? BulletType.HE : BulletType.AP;
+        if (!immune.Contains(fallback.ToString()))
+            return fallback;
+
+        // 两个都被免疫 → 上 HCHE（贵但可用）
+        return BulletType.HCHE;
     }
 
     /// <summary>两个角度之间的最小差值 [0, 180]</summary>

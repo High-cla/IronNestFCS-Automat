@@ -166,6 +166,8 @@ public class GunSystem {
     }
 
     public IEnumerator WaitBackToIdle() {
+        // ponytail: 13s 不是魔数，是炮管退膛→抛壳→复进→闭锁的机械循环时间。
+        // 改短会导致下一发装填时 breech 未复位，装填卡住。
         while (gunController.elevationChangeVelocity != 0) {
             yield return new WaitForSeconds(0.1f);
         }

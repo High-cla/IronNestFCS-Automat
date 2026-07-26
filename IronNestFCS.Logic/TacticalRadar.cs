@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using Il2Cpp;
@@ -65,7 +66,7 @@ public class TacticalRadar
             var loc = child.GetComponent<EntityLocation>();
             if (loc == null) continue;
             if (!IsAlive(loc, child)) continue;
-            if (!TryReadRole(loc, out int role, out string icon, out int stars)) continue;
+            if (!TryReadRole(loc, out int role, out string icon, out int stars, out var immuneShells)) continue;
 
             bool isHostile = (role & RoleEnemy) != 0 || (role & RoleTarget) != 0;
             bool isAlly = (role & RoleAlly) != 0;
@@ -87,7 +88,8 @@ public class TacticalRadar
                 IsArmored = isArmored,
                 IsUnderground = isUnderground,
                 WorldPos = child.position,
-                ChildIndex = i
+                ChildIndex = i,
+                ImmuneShells = immuneShells
             });
         }
 
@@ -127,9 +129,9 @@ public class TacticalRadar
 
     // ─── 角色读取 ───
 
-    private static bool TryReadRole(EntityLocation loc, out int role, out string icon, out int stars)
+    private static bool TryReadRole(EntityLocation loc, out int role, out string icon, out int stars, out HashSet<string> immuneShells)
     {
-        role = -1; icon = ""; stars = 0;
+        role = -1; icon = ""; stars = 0; immuneShells = new HashSet<string>();
         try
         {
             var entityProp = loc.GetType().GetProperty("Entity",
@@ -165,6 +167,22 @@ public class TacticalRadar
                 if (v is int si) stars = si;
             }
 
+            // 读取 ImmuneShells：可能是 string[]、Il2Cpp 数组或 IEnumerable
+            var immuneProp = entType.GetProperty("ImmuneShells",
+                BindingFlags.Public | BindingFlags.Instance);
+            if (immuneProp != null)
+            {
+                var val = immuneProp.GetValue(entity);
+                if (val is IEnumerable enumerable)
+                {
+                    foreach (var item in enumerable)
+                    {
+                        if (item != null)
+                            immuneShells.Add(item.ToString() ?? "");
+                    }
+                }
+            }
+
             return role >= 0;
         }
         catch (Exception ex)
@@ -189,10 +207,12 @@ public class TacticalRadar
 
     private static int CalcPriority(int role, string icon, int stars)
     {
-        // 5: 火炮 + FDC（最高优先，必须先摧毁）
-        if ((role & RoleArtillery) != 0) return 5;
+        // 6: FDC（最高优先——暂停 CBT）
         bool isFdc = icon.ToLower().Contains("fire direction");
-        if (isFdc) return 5;
+        if (isFdc) return 6;
+
+        // 5: 火炮
+        if ((role & RoleArtillery) != 0) return 5;
 
         // 4: 弹药库/高价值/3星以上
         if ((role & RoleAmmo) != 0 || (role & RoleHighValue) != 0) return 4;
