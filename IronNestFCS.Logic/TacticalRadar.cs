@@ -79,6 +79,9 @@ public class TacticalRadar
             bool isArmored = (role & RoleFortification) != 0 || (role & RoleTank) != 0;
             bool isUnderground = IsUnderground(child.name, icon);
 
+            MelonLogger.Msg($"[Radar] {child.name} icon='{icon}' prio={priority} " +
+                            $"armored={isArmored} underground={isUnderground} immune=[{string.Join(",", immuneShells)}]");
+
             targets.Add(new TacticalDecider.TargetInfo
             {
                 Name = child.name,
@@ -197,11 +200,20 @@ public class TacticalRadar
     private static bool IsUnderground(string name, string icon)
     {
         var low = name.ToLower();
-        // 名字包含地下/地堡特征词
-        foreach (var key in new[] { "bunker", "underground", "shelter", "bombproof", "pillbox", "dugout" })
+        var lowIcon = icon.ToLower();
+
+        // 名字关键词（地下/地堡/仓库/弹药库）
+        foreach (var key in new[] {
+            "bunker", "underground", "shelter", "bombproof", "pillbox", "dugout",
+            "depot", "storage", "magazine", "cache", "armory", "warehouse",
+            "subterranean", "tunnel", "cave", "vault", "casemate"
+        })
             if (low.Contains(key)) return true;
-        // Icon 里有 underground 相关
-        if (icon.ToLower().Contains("underground")) return true;
+
+        // Icon 里的标签（游戏可能用 underground / bunker / fortification 标记）
+        foreach (var key in new[] { "underground", "bunker", "bombproof", "subterranean" })
+            if (lowIcon.Contains(key)) return true;
+
         return false;
     }
 
