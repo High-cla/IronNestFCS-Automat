@@ -202,6 +202,50 @@ public class FSC
                     }
                 }
             }
+            // 4. 阀门系统：找 ValveController 和 RegisteredValves
+            MelonLogger.Msg("[FCS] === Telemetry: Valve system ===");
+            foreach (var t in Object.FindObjectsOfType<Transform>(true))
+            {
+                // 搜 ValveController 类型的组件
+                var comps = t.GetComponents<Component>();
+                foreach (var c in comps)
+                {
+                    if (c == null) continue;
+                    var type = c.GetType();
+                    if (type.Name.Contains("Valve"))
+                    {
+                        MelonLogger.Msg($"[FCS]   Valve component: {type.FullName} on '{t.name}'");
+                        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                        {
+                            if (prop.Name is "transform" or "gameObject" or "tag" or "name" or "m_CachedPtr") continue;
+                            try { MelonLogger.Msg($"[FCS]     .{prop.Name} = {prop.GetValue(c)}"); }
+                            catch { }
+                        }
+                    }
+                }
+                // 找带 RegisteredValves 属性的组件
+                foreach (var c in comps)
+                {
+                    if (c == null) continue;
+                    var type = c.GetType();
+                    var regProp = type.GetProperty("RegisteredValves", BindingFlags.Public | BindingFlags.Instance);
+                    if (regProp != null)
+                    {
+                        MelonLogger.Msg($"[FCS]   RegisteredValves owner: {type.Name} on '{t.name}'");
+                        try
+                        {
+                            var valves = regProp.GetValue(c);
+                            if (valves != null)
+                            {
+                                var countProp = valves.GetType().GetProperty("Count", BindingFlags.Public | BindingFlags.Instance);
+                                var count = countProp?.GetValue(valves) ?? "?";
+                                MelonLogger.Msg($"[FCS]     RegisteredValves.Count = {count}");
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
             MelonLogger.Msg("[FCS] === Telemetry scan complete ===");
         }
         catch (Exception ex)
