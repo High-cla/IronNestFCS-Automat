@@ -20,7 +20,7 @@ A [MelonLoader](https://melonwiki.xyz/) mod for *[Iron Nest: Heavy Turret Simula
 - **自动击发 / Auto Fire**：面板 `Auto Fire` 开关切换手动 / 自动击发。Toggle manual/auto firing via panel switch.
 
 ### 战术智能 / Tactical Intelligence (v1.1.0)
-- **战术雷达 / Tactical Radar**：自动扫描场景中 `FireMissionRoot` 下的所有敌军实体，通过反射读取 Entity 的 Role / Icon / Stars / ImmuneShells 属性进行敌我识别与威胁评估。Auto-scans all enemy entities under `FireMissionRoot`, reading Role bitmask, Icon, Stars, and ImmuneShells via reflection for identification and threat assessment.
+- **战术雷达 / Tactical Radar**：从 `FireMission.Entities` 目标注册表扫描全部敌我实体（含未生成的后续波次目标），读取 Role / Icon / Stars / Armour / ImmuneShells / IsAlive 属性进行敌我识别与威胁评估。Auto-scans the `FireMission.Entities` target registry (including future wave spawns), reading Role bitmask, Icon, Stars, Armour, ImmuneShells, and IsAlive for identification and threat assessment.
 - **智能弹种选择 / Smart Shell Selection**：装甲/工事/弹药库/地下目标自动切换 AP，软目标使用 HE；结合 ImmuneShells 属性避开无效弹种。AP for armored/fortification/ammo/underground targets, HE for soft targets; respects ImmuneShells to skip ineffective shell types.
 - **优先级排序 / Priority System**：6 级目标优先级 — FDC(6) > 火炮(5) > 弹药库/高价值/3★(4) > 装甲/工事/1★(3) > 普通(2) > 其他(1)。同级目标按综合成本排序（距离×2.56 + 角度差×0.30）。6-tier target priority; same-priority targets sorted by combined cost (distance×2.56 + angle delta×0.30).
 - **地下目标检测 / Underground Detection**：双重检测 — 名称关键词（bunker/underground/shelter/pillbox/dugout/bombproof/depot/storage/warehouse/magazine/cache/vault/tunnel）+ Entity 属性（IsUnderground/Underground/IsBunker/Bunker）。Dual-path detection: name keywords + Entity property reflection.
