@@ -94,8 +94,8 @@ public class FSC
                   && Turret.TryBind()
                   && TriggerConsole.TryBind();
         MelonLogger.Msg("[FCS] Initialize: " + (IsBound ? "success" : "failed"));
-        // 诊断：验证电报/参考点/侦察的技术可行性
-        if (IsBound) RunEnemyProbe();
+        // 探针已完成使命，需要时取消注释：
+        // if (IsBound) RunEnemyProbe();
 
         return IsBound;
     }
