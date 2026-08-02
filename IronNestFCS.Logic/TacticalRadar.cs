@@ -33,7 +33,7 @@ public class TacticalRadar
     // 缓存的 FireMission 引用（按 F9 重载后失效，Scan 内自动刷新）
     private FireMission? _cachedFm;
     private PropertyInfo? _entitiesProp;
-    private static bool _coordMappingDumped;  // 一次性 dump 坐标映射
+    private RectTransform? _coordinateRoot;   // 网格坐标→世界坐标的桥梁
 
     public bool AutoPlaceMarkers { get; set; } = true;
     public List<TacticalDecider.TargetInfo> AliveHostiles { get; private set; } = new();
@@ -158,24 +158,21 @@ public class TacticalRadar
                              || icon.IndexOf("supply", StringComparison.OrdinalIgnoreCase) >= 0
                              || icon.IndexOf("fire direction", StringComparison.OrdinalIgnoreCase) >= 0;
 
-            // 坐标：从 EntityLocation (Location) 取世界坐标；无 Location = 未 spawn，跳过
+            // 坐标：优先从 EntityLocation 取；无 Location（未 spawn）用 coordinateRoot 转换
             var locProp = meType.GetProperty("Location", BindingFlags.Public | BindingFlags.Instance);
             var location = locProp?.GetValue(me) as EntityLocation;
-            if (location == null) continue;
-            Vector3 worldPos = location.transform.position;
-
-            // 一次性 dump 坐标映射关系：MapEntity.Position ↔ Location 世界坐标
-            if (!_coordMappingDumped && isHostile)
+            Vector3 worldPos;
+            if (location != null)
             {
-                _coordMappingDumped = true;
-                var mapSurface = GameObject.Find("Draggable Surface")?.transform;
-                var localFromWorld = mapSurface != null ? mapSurface.InverseTransformPoint(worldPos) : Vector3.zero;
-                var worldFromMapPos = mapSurface != null ? mapSurface.TransformPoint(mapPos) : Vector3.zero;
-                MelonLogger.Msg($"[Radar] Coord mapping for '{key}':");
-                MelonLogger.Msg($"[Radar]   MapEntity.Position = {mapPos}");
-                MelonLogger.Msg($"[Radar]   Location worldPos  = {worldPos}");
-                MelonLogger.Msg($"[Radar]   InvTfPt(worldPos)  = {localFromWorld}  (map-local from world)");
-                MelonLogger.Msg($"[Radar]   TfPt(mapPos)       = {worldFromMapPos}  (world from MapEntity.Pos)");
+                worldPos = location.transform.position;
+            }
+            else if (_coordinateRoot != null)
+            {
+                worldPos = _coordinateRoot.TransformPoint(mapPos);
+            }
+            else
+            {
+                continue;
             }
 
             targets.Add(new TacticalDecider.TargetInfo
@@ -217,7 +214,6 @@ public class TacticalRadar
     {
         try
         {
-            // 缓存失效检查
             if (_cachedFm != null && _entitiesProp != null)
             {
                 try { var test = _entitiesProp.GetValue(_cachedFm); if (test != null) return (_cachedFm, test); }
@@ -226,6 +222,7 @@ public class TacticalRadar
 
             _cachedFm = null;
             _entitiesProp = null;
+            _coordinateRoot = null;
 
             var fmGo = GameObject.Find("Fire Mission Root");
             if (fmGo == null) return (null, null);
@@ -234,6 +231,10 @@ public class TacticalRadar
 
             _entitiesProp = _cachedFm.GetType().GetProperty("Entities", BindingFlags.Public | BindingFlags.Instance);
             if (_entitiesProp == null) return (null, null);
+
+            // 缓存 coordinateRoot：网格坐标 → 世界坐标的桥梁
+            var crProp = _cachedFm.GetType().GetProperty("coordinateRoot", BindingFlags.Public | BindingFlags.Instance);
+            _coordinateRoot = crProp?.GetValue(_cachedFm) as RectTransform;
 
             var dict = _entitiesProp.GetValue(_cachedFm);
             return (_cachedFm, dict);
