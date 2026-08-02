@@ -110,145 +110,124 @@ public class FSC
     {
         try
         {
-            MelonLogger.Msg("[FCS] === Il2Cpp Dictionary deep probe ===");
+            MelonLogger.Msg("[FCS] === MapEntity deep probe ===");
             var fm = GameObject.Find("Fire Mission Root")?.GetComponent<FireMission>();
             if (fm == null) { MelonLogger.Msg("[FCS]   no FireMission"); return; }
 
             var fmType = fm.GetType();
+            var entitiesProp = fmType.GetProperty("Entities", BindingFlags.Public | BindingFlags.Instance);
+            if (entitiesProp == null) { MelonLogger.Msg("[FCS]   no Entities prop"); return; }
+            var entities = entitiesProp.GetValue(fm);
+            if (entities == null) { MelonLogger.Msg("[FCS]   Entities == null"); return; }
 
-            // Dump FireMission 自身所有成员（找 Entities/RunningTimers 的真正访问方式）
-            MelonLogger.Msg("[FCS] --- FireMission members ---");
-            foreach (var m in fmType.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
+            // 获取 Count
+            var countProp = entities.GetType().GetProperty("Count", BindingFlags.Public | BindingFlags.Instance);
+            var total = countProp != null ? (int)countProp.GetValue(entities) : -1;
+            MelonLogger.Msg($"[FCS] Entities.Count = {total}");
+
+            // 通过 Il2Cpp 泛型 GetEnumerator() 枚举前 5 条
+            var getEnum = entities.GetType().GetMethod("GetEnumerator", BindingFlags.Public | BindingFlags.Instance);
+            if (getEnum == null) { MelonLogger.Msg("[FCS]   no GetEnumerator"); return; }
+            var enumerator = getEnum.Invoke(entities, null);
+            if (enumerator == null) { MelonLogger.Msg("[FCS]   GetEnumerator returned null"); return; }
+
+            var enumType = enumerator.GetType();
+            var moveNext = enumType.GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance);
+            var currentProp = enumType.GetProperty("Current", BindingFlags.Public | BindingFlags.Instance);
+            if (moveNext == null || currentProp == null) { MelonLogger.Msg("[FCS]   no MoveNext/Current on enumerator"); return; }
+
+            int shown = 0;
+            while (shown < 5 && (bool)moveNext.Invoke(enumerator, null)!)
             {
-                try
+                var kvp = currentProp.GetValue(enumerator);
+                if (kvp == null) continue;
+
+                var kvpType = kvp.GetType();
+                var keyProp = kvpType.GetProperty("Key", BindingFlags.Public | BindingFlags.Instance);
+                var valueProp = kvpType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
+
+                var key = keyProp?.GetValue(kvp)?.ToString() ?? "?";
+                var mapEntity = valueProp?.GetValue(kvp);
+
+                MelonLogger.Msg($"[FCS] --- Entities['{key}'] ---");
+                if (mapEntity == null) { MelonLogger.Msg("[FCS]   MapEntity = null"); shown++; continue; }
+
+                var meType = mapEntity.GetType();
+                MelonLogger.Msg($"[FCS]   MapEntity type: {meType.FullName}");
+                MelonLogger.Msg($"[FCS]   MapEntity.ToString(): {mapEntity}");
+
+                // Dump MapEntity 所有属性
+                foreach (var p in meType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
                 {
-                    if (m is PropertyInfo pi)
+                    if (p.Name is "ObjectClass" or "Pointer" or "WasCollected")
+                        continue;
+                    try
                     {
-                        if (pi.Name is "transform" or "gameObject" or "tag" or "name" or "hideFlags"
-                            or "m_CachedPtr" or "ObjectClass" or "Pointer" or "WasCollected"
-                            or "transformHandle" or "constrainProportionsScale" or "rotationOrder"
-                            or "hierarchyCapacity" or "hierarchyCount" or "root" or "useGUILayout"
-                            or "didStart" or "didAwake" or "enabled" or "isActiveAndEnabled")
-                            continue;
-                        try
-                        {
-                            var v = pi.GetValue(fm);
-                            if (v != null)
-                                MelonLogger.Msg($"[FCS]   prop {pi.Name}: {pi.PropertyType.Name} = {v.GetType().FullName}");
-                            else
-                                MelonLogger.Msg($"[FCS]   prop {pi.Name}: {pi.PropertyType.Name} = null");
-                        }
-                        catch (Exception ex) { MelonLogger.Msg($"[FCS]   prop {pi.Name}: {pi.PropertyType.Name} → {ex.GetType().Name}: {ex.Message}"); }
+                        var v = p.GetValue(mapEntity);
+                        if (v == null)
+                            MelonLogger.Msg($"[FCS]   .{p.Name} ({p.PropertyType.Name}) = null");
+                        else
+                            MelonLogger.Msg($"[FCS]   .{p.Name} ({p.PropertyType.Name}) = {v}");
+                    }
+                    catch (Exception ex)
+                    {
+                        MelonLogger.Msg($"[FCS]   .{p.Name} ({p.PropertyType.Name}) → {ex.GetType().Name}: {ex.Message}");
                     }
                 }
-                catch { }
+                shown++;
             }
+            MelonLogger.Msg($"[FCS] === Enumerated {shown} MapEntity entries ===");
 
-            // 深探 Entities 字典
-            DumpIl2CppDict(fm, "Entities");
-            // 深探 RunningTimers 字典
-            DumpIl2CppDict(fm, "RunningTimers");
-
-            MelonLogger.Msg("[FCS] === Deep probe done ===");
+            // 同时 dump TimerValue 类型（通过 Values 拿一个，空则通过类型名）
+            DumpTimerValue(fm);
         }
         catch (Exception ex)
         {
-            MelonLogger.Warning($"[FCS] Deep probe failed: {ex.GetType().Name}: {ex.Message}");
+            MelonLogger.Warning($"[FCS] MapEntity probe failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
         }
     }
 
-    /// <summary>Dump Il2Cpp 泛型字典的所有可访问成员，并尝试读取键值对。</summary>
-    private static void DumpIl2CppDict(FireMission fm, string propName)
+    private static void DumpTimerValue(FireMission fm)
     {
         try
         {
-            var prop = fm.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (prop == null) { MelonLogger.Msg($"[FCS]   {propName}: no property"); return; }
-            var dict = prop.GetValue(fm);
-            if (dict == null) { MelonLogger.Msg($"[FCS]   {propName}: null"); return; }
+            var timersProp = fm.GetType().GetProperty("RunningTimers", BindingFlags.Public | BindingFlags.Instance);
+            if (timersProp == null) return;
+            var timers = timersProp.GetValue(fm);
+            if (timers == null) { MelonLogger.Msg("[FCS] --- TimerValue: no timers (empty dictionary) ---"); return; }
 
-            var dictType = dict.GetType();
-            MelonLogger.Msg($"[FCS] --- {propName}: {dictType.FullName} ---");
-            MelonLogger.Msg($"[FCS]   Base: {dictType.BaseType?.FullName}");
-            foreach (var iface in dictType.GetInterfaces())
-                MelonLogger.Msg($"[FCS]   Interface: {iface.FullName}");
+            // 尝试从 Values 获取元素
+            var valuesProp = timers.GetType().GetProperty("Values", BindingFlags.Public | BindingFlags.Instance);
+            if (valuesProp == null) return;
+            var values = valuesProp.GetValue(timers);
+            if (values == null) return;
 
-            // Dump 所有 public 成员
-            foreach (var m in dictType.GetMembers(BindingFlags.Public | BindingFlags.Instance))
+            var getEnum = values.GetType().GetMethod("GetEnumerator", BindingFlags.Public | BindingFlags.Instance);
+            if (getEnum == null) return;
+            var enumerator = getEnum.Invoke(values, null);
+            if (enumerator == null) return;
+
+            var moveNext = enumerator.GetType().GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance);
+            var currentProp = enumerator.GetType().GetProperty("Current", BindingFlags.Public | BindingFlags.Instance);
+            if (moveNext == null || currentProp == null) return;
+
+            if ((bool)moveNext.Invoke(enumerator, null)!)
             {
-                try
+                var tv = currentProp.GetValue(enumerator);
+                if (tv != null)
                 {
-                    if (m is PropertyInfo pi)
+                    MelonLogger.Msg($"[FCS] --- TimerValue: {tv.GetType().FullName} ---");
+                    foreach (var p in tv.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
                     {
-                        if (pi.GetIndexParameters().Length > 0) continue; // skip indexer
-                        try
-                        {
-                            var v = pi.GetValue(dict);
-                            MelonLogger.Msg($"[FCS]   [{propName}] .{pi.Name} = {v ?? "null"}");
-                        }
-                        catch (Exception ex)
-                        {
-                            MelonLogger.Msg($"[FCS]   [{propName}] .{pi.Name} → {ex.GetType().Name}: {ex.Message}");
-                        }
-                    }
-                    else if (m is MethodInfo mi && !mi.IsSpecialName && mi.DeclaringType == dictType)
-                    {
-                        MelonLogger.Msg($"[FCS]   [{propName}] method {mi.Name}({string.Join(", ", mi.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"))})");
-                    }
-                }
-                catch { }
-            }
-
-            // 尝试通过 IEnumerable 枚举（Il2Cpp Dictionary 可能实现了这个）
-            if (dict is System.Collections.IEnumerable en)
-            {
-                MelonLogger.Msg($"[FCS]   [{propName}] IS IEnumerable → trying enumeration...");
-                try
-                {
-                    var iter = en.GetEnumerator();
-                    if (iter != null)
-                    {
-                        int count = 0;
-                        while (iter.MoveNext() && count < 5)
-                        {
-                            var entry = iter.Current;
-                            if (entry != null)
-                            {
-                                var entryType = entry.GetType();
-                                MelonLogger.Msg($"[FCS]   [{propName}] entry[{count}]: {entryType.FullName}");
-                                // Dump Key/Value on entry
-                                foreach (var ep in entryType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                                {
-                                    try
-                                    {
-                                        var ev = ep.GetValue(entry);
-                                        if (ev != null)
-                                            MelonLogger.Msg($"[FCS]   [{propName}]   .{ep.Name} ({ep.PropertyType.Name}) = {ev}");
-                                        else
-                                            MelonLogger.Msg($"[FCS]   [{propName}]   .{ep.Name} ({ep.PropertyType.Name}) = null");
-                                    }
-                                    catch { }
-                                }
-                            }
-                            count++;
-                        }
-                        MelonLogger.Msg($"[FCS]   [{propName}] enumerated {count} entries");
+                        if (p.Name is "ObjectClass" or "Pointer" or "WasCollected") continue;
+                        try { MelonLogger.Msg($"[FCS]   .{p.Name} ({p.PropertyType.Name}) = {p.GetValue(tv)}"); }
+                        catch (Exception ex) { MelonLogger.Msg($"[FCS]   .{p.Name} → {ex.GetType().Name}: {ex.Message}"); }
                     }
                 }
-                catch (Exception ex)
-                {
-                    MelonLogger.Msg($"[FCS]   [{propName}] enumerate failed: {ex.GetType().Name}: {ex.Message}");
-                }
             }
-            else
-            {
-                MelonLogger.Msg($"[FCS]   [{propName}] NOT IEnumerable");
-            }
+            else MelonLogger.Msg("[FCS] --- TimerValue: enumerator empty ---");
         }
-        catch (Exception ex)
-        {
-            MelonLogger.Warning($"[FCS] DumpIl2CppDict({propName}) failed: {ex.GetType().Name}: {ex.Message}");
-        }
+        catch (Exception ex) { MelonLogger.Warning($"[FCS] TimerValue dump: {ex.GetType().Name}: {ex.Message}"); }
     }
 
     public (bool hasTimer, string keys) PollRunningTimers()
