@@ -88,16 +88,20 @@ public class FcsModule : IFcsModule
             lastScanTime = Time.time;
         }
 
-        // 轮询 CBT 计时器（每 5s），数量变化时打日志
+        // 轮询 CBT 计时器（每 5s），只在发现 timer 时打日志
         if (fcs.IsBound && Time.time - lastCbtPollTime > 5f)
         {
             lastCbtPollTime = Time.time;
             var (hasTimer, info) = fcs.PollRunningTimers();
-            var currentCount = hasTimer ? 1 : 0;
-            if (currentCount != lastCbtCount)
+            if (hasTimer && lastCbtCount == 0)
             {
-                lastCbtCount = currentCount;
-                MelonLogger.Msg($"[FCS] CBT {(hasTimer ? $"found: {info}" : $"poll: {info}")}");
+                lastCbtCount = 1;
+                MelonLogger.Msg($"[FCS] CBT active: {info}");
+            }
+            else if (!hasTimer && lastCbtCount != 0)
+            {
+                lastCbtCount = 0;
+                MelonLogger.Msg("[FCS] CBT ended");
             }
         }
 

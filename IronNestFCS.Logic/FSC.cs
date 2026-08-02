@@ -95,162 +95,83 @@ public class FSC
                   && TriggerConsole.TryBind();
         MelonLogger.Msg("[FCS] Initialize: " + (IsBound ? "success" : "failed"));
         // 诊断：验证电报/参考点/侦察的技术可行性
-        if (IsBound) RunTelemetryScan();
+        if (IsBound) RunEnemyProbe();
 
         return IsBound;
     }
 
     /// <summary>
-    /// 一次性的场景诊断：找 Teleprinter（电报）、Spotter/Alpha 参考点、侦察相关组件。
-    /// 输出到日志供技术可行性判断。
+    /// 探索性扫描：在场景中搜索 Enemy/Spawn/Target/Recon/CBT 相关 GameObject 和组件，
+    /// 输出类型名和关键属性，用于定位反炮兵自动化的数据源。
     /// </summary>
-    private void RunTelemetryScan()
+    private void RunEnemyProbe()
     {
         try
         {
-            // 1. 搜 Teleprinter / 电报 / 消息 相关
-            MelonLogger.Msg("[FCS] === Telemetry: Teleprinter / Message ===");
-            var allObjects = Object.FindObjectsOfType<Transform>(true);
-            foreach (var t in allObjects)
+            // GameObject 名称关键词
+            var nameKeys = new[] {
+                "enemy", "spawn", "target", "artillery", "fdc", "firemission",
+                "counterbattery", "battery", "recon", "photo", "observation",
+                "objective", "mission", "convoy", "infantry", "wave", "manager"
+            };
+            // 组件类型名关键词
+            var typeKeys = new[] {
+                "Enemy", "Spawn", "Target", "Artillery", "FDC", "FireMission",
+                "CounterBattery", "Battery", "Recon", "Photo", "Observation",
+                "Objective", "Mission", "Convoy", "Infantry", "Wave", "Manager",
+                "Spawner", "Database", "Registry"
+            };
+
+            MelonLogger.Msg("[FCS] === Enemy/Spawn probe ===");
+            var seenTypes = new HashSet<string>();
+            foreach (var t in Object.FindObjectsOfType<Transform>(true))
             {
-                if (t.name.IndexOf("Teleprinter", StringComparison.OrdinalIgnoreCase) >= 0
-                    || t.name.IndexOf("Telegram", StringComparison.OrdinalIgnoreCase) >= 0
-                    || t.name.IndexOf("Printer", StringComparison.OrdinalIgnoreCase) >= 0
-                    || t.name.IndexOf("Briefing", StringComparison.OrdinalIgnoreCase) >= 0
-                    || t.name.IndexOf("Message", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    MelonLogger.Msg($"[FCS]   GameObject: '{t.name}'");
-                    foreach (var c in t.GetComponents<Component>())
-                    {
-                        if (c == null) continue;
-                        var type = c.GetType();
-                        MelonLogger.Msg($"[FCS]     Component: {type.Name}");
-                        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                        {
-                            try { MelonLogger.Msg($"[FCS]       .{prop.Name} = {prop.GetValue(c)}"); }
-                            catch { }
-                        }
-                    }
-                }
-                // 也搜组件类型名含关键字的
+                var nameLow = t.name.ToLower();
+                bool nameMatch = nameKeys.Any(k => nameLow.Contains(k));
+
                 foreach (var c in t.GetComponents<Component>())
                 {
                     if (c == null) continue;
-                    var typeName = c.GetType().Name;
-                    if (typeName.IndexOf("Teleprinter", StringComparison.OrdinalIgnoreCase) >= 0
-                        || typeName.IndexOf("Printer", StringComparison.OrdinalIgnoreCase) >= 0
-                        || typeName.IndexOf("Message", StringComparison.OrdinalIgnoreCase) >= 0
-                        || typeName.IndexOf("Briefing", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        MelonLogger.Msg($"[FCS]   Component type: {c.GetType().FullName} on '{t.name}'");
-                        foreach (var prop in c.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                        {
-                            try { MelonLogger.Msg($"[FCS]     .{prop.Name} = {prop.GetValue(c)}"); }
-                            catch { }
-                        }
-                    }
-                }
-            }
-
-            // 2. Teleprinter Radio 及子对象——递归 dump 所有组件
-            MelonLogger.Msg("[FCS] === Telemetry: Teleprinter Radio deep scan ===");
-            var radio = GameObject.Find("Teleprinter Radio");
-            if (radio != null)
-            {
-                DumpGameObjectRecursive(radio.transform, "  ");
-            }
-
-            // 3. 搜 Spotter / Alpha / Bravo / Charlie 参考点
-            MelonLogger.Msg("[FCS] === Telemetry: Spotter / Reference points ===");
-            foreach (var t in allObjects)
-            {
-                var low = t.name.ToLower();
-                if (low.Contains("spotter") || low.Contains("alpha") || low.Contains("bravo")
-                    || low.Contains("charlie") || low.Contains("reference")
-                    || low.Contains("observer") || low.Contains("movezone")
-                    || low.Contains("movedirection"))
-                {
-                    var loc = t.GetComponent<EntityLocation>();
-                    MelonLogger.Msg($"[FCS]   '{t.name}' pos={t.position}" +
-                                    (loc != null ? $" (has EntityLocation, enabled={t.gameObject.activeInHierarchy})" : ""));
-                }
-            }
-
-            // 3. Dump FireMission.Entities 的所有键（已有的地图实体）
-            MelonLogger.Msg("[FCS] === Telemetry: FireMission.Entities ===");
-            var fm = GameObject.Find("Fire Mission Root")?.GetComponent<FireMission>();
-            if (fm != null)
-            {
-                var entitiesProp = fm.GetType().GetProperty("Entities",
-                    BindingFlags.Public | BindingFlags.Instance);
-                if (entitiesProp != null)
-                {
-                    var entities = entitiesProp.GetValue(fm);
-                    if (entities != null)
-                    {
-                        var keysProp = entities.GetType().GetProperty("Keys",
-                            BindingFlags.Public | BindingFlags.Instance);
-                        if (keysProp != null)
-                        {
-                            var keys = keysProp.GetValue(entities);
-                            if (keys is IEnumerable keyEnum)
-                            {
-                                foreach (var k in keyEnum)
-                                    MelonLogger.Msg($"[FCS]   Entity key: '{k}'");
-                            }
-                        }
-                    }
-                }
-            }
-            // 4. 阀门系统：找 ValveController 和 RegisteredValves
-            MelonLogger.Msg("[FCS] === Telemetry: Valve system ===");
-            foreach (var t in Object.FindObjectsOfType<Transform>(true))
-            {
-                // 搜 ValveController 类型的组件
-                var comps = t.GetComponents<Component>();
-                foreach (var c in comps)
-                {
-                    if (c == null) continue;
                     var type = c.GetType();
-                    if (type.Name.Contains("Valve"))
+                    var typeName = type.Name;
+                    var typeNameLow = typeName.ToLower();
+                    bool typeMatch = typeKeys.Any(k => typeNameLow.Contains(k));
+
+                    if (!nameMatch && !typeMatch) continue;
+
+                    // 每种类型只 dump 一次（避免重复刷屏）
+                    var typeKey = type.FullName ?? typeName;
+                    if (seenTypes.Contains(typeKey)) continue;
+                    seenTypes.Add(typeKey);
+
+                    MelonLogger.Msg($"[FCS]   {typeName} on '{t.name}'");
+                    foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
                     {
-                        MelonLogger.Msg($"[FCS]   Valve component: {type.FullName} on '{t.name}'");
-                        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                        {
-                            if (prop.Name is "transform" or "gameObject" or "tag" or "name" or "m_CachedPtr") continue;
-                            try { MelonLogger.Msg($"[FCS]     .{prop.Name} = {prop.GetValue(c)}"); }
-                            catch { }
-                        }
-                    }
-                }
-                // 找带 RegisteredValves 属性的组件
-                foreach (var c in comps)
-                {
-                    if (c == null) continue;
-                    var type = c.GetType();
-                    var regProp = type.GetProperty("RegisteredValves", BindingFlags.Public | BindingFlags.Instance);
-                    if (regProp != null)
-                    {
-                        MelonLogger.Msg($"[FCS]   RegisteredValves owner: {type.Name} on '{t.name}'");
+                        if (prop.Name is "transform" or "gameObject" or "tag" or "name" or "hideFlags"
+                            or "m_CachedPtr" or "ObjectClass" or "Pointer" or "WasCollected"
+                            or "transformHandle" or "constrainProportionsScale" or "rotationOrder"
+                            or "hierarchyCapacity" or "hierarchyCount" or "root")
+                            continue;
                         try
                         {
-                            var valves = regProp.GetValue(c);
-                            if (valves != null)
-                            {
-                                var countProp = valves.GetType().GetProperty("Count", BindingFlags.Public | BindingFlags.Instance);
-                                var count = countProp?.GetValue(valves) ?? "?";
-                                MelonLogger.Msg($"[FCS]     RegisteredValves.Count = {count}");
-                            }
+                            var val = prop.GetValue(c);
+                            if (val == null) continue;
+                            var str = val.ToString() ?? "";
+                            // 跳过无意义的 ToString（只是类型全名）
+                            if (str == val.GetType().FullName && str.StartsWith("Il2Cpp")) continue;
+                            if (str == typeKey) continue;
+                            MelonLogger.Msg($"[FCS]     .{prop.Name} ({prop.PropertyType.Name}) = {str}");
                         }
                         catch { }
                     }
                 }
             }
-            MelonLogger.Msg("[FCS] === Telemetry scan complete ===");
+            MelonLogger.Msg($"[FCS] === Probe done: {seenTypes.Count} component types ===\n" +
+                            $"  seen: {string.Join(", ", seenTypes)}");
         }
         catch (Exception ex)
         {
-            MelonLogger.Warning($"[FCS] Telemetry scan: {ex.Message}");
+            MelonLogger.Warning($"[FCS] Enemy probe failed: {ex.Message}");
         }
     }
 
@@ -555,35 +476,6 @@ public class FSC
             // 通知雷达：有一门炮退膛完毕，可以刷新队列了
             try { OnGunIdle?.Invoke(); } catch { }
         }
-    }
-
-    /// <summary>递归 dump GameObject 及其子对象上的非 Transform 组件</summary>
-    private static void DumpGameObjectRecursive(Transform t, string indent)
-    {
-        foreach (var c in t.GetComponents<Component>())
-        {
-            var type = c.GetType();
-            if (type == typeof(Transform) || type.Name == "Transform" || type.Name == "Component") continue;
-            MelonLogger.Msg($"[FCS] {indent}{t.name} => {type.Name}");
-            // 只打印非 Transform/GameObject 的属性
-            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (prop.Name is "transform" or "gameObject" or "tag" or "name" or "hideFlags"
-                    or "m_CachedPtr" or "ObjectClass" or "Pointer" or "WasCollected"
-                    or "transformHandle" or "constrainProportionsScale" or "rotationOrder"
-                    or "hierarchyCapacity" or "hierarchyCount")
-                    continue;
-                try
-                {
-                    var val = prop.GetValue(c);
-                    if (val != null && val.ToString() != val.GetType().FullName)
-                        MelonLogger.Msg($"[FCS] {indent}  .{prop.Name} = {val}");
-                }
-                catch { }
-            }
-        }
-        for (int i = 0; i < t.childCount; i++)
-            DumpGameObjectRecursive(t.GetChild(i), indent + "  ");
     }
 
     /// <summary>
