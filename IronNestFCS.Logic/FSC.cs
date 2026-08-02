@@ -178,13 +178,79 @@ public class FSC
             }
             MelonLogger.Msg($"[FCS] === Enumerated {shown} MapEntity entries ===");
 
-            // 同时 dump TimerValue 类型（通过 Values 拿一个，空则通过类型名）
+            // Dump coordinateRoot: 这是游戏网格坐标 → 地图桌面的映射桥梁
+            DumpCoordinateRoot(fm);
+
             DumpTimerValue(fm);
         }
         catch (Exception ex)
         {
             MelonLogger.Warning($"[FCS] MapEntity probe failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
         }
+    }
+
+    private static void DumpCoordinateRoot(FireMission fm)
+    {
+        try
+        {
+            var crProp = fm.GetType().GetProperty("coordinateRoot", BindingFlags.Public | BindingFlags.Instance);
+            if (crProp == null) { MelonLogger.Msg("[FCS] --- coordinateRoot: no property ---"); return; }
+            var cr = crProp.GetValue(fm) as RectTransform;
+            if (cr == null) { MelonLogger.Msg("[FCS] --- coordinateRoot: null ---"); return; }
+
+            MelonLogger.Msg("[FCS] --- coordinateRoot RectTransform ---");
+            MelonLogger.Msg($"[FCS]   rect = {cr.rect}");
+            MelonLogger.Msg($"[FCS]   anchorMin = {cr.anchorMin}, anchorMax = {cr.anchorMax}");
+            MelonLogger.Msg($"[FCS]   pivot = {cr.pivot}");
+            MelonLogger.Msg($"[FCS]   sizeDelta = {cr.sizeDelta}");
+            MelonLogger.Msg($"[FCS]   localPosition = {cr.localPosition}");
+            MelonLogger.Msg($"[FCS]   localScale = {cr.localScale}");
+            MelonLogger.Msg($"[FCS]   anchoredPosition = {cr.anchoredPosition}");
+            MelonLogger.Msg($"[FCS]   lossyScale = {cr.lossyScale}");
+            // 也 dump 父 Transform（可能是 Draggable Surface 或 Map 相关）
+            var parent = cr.parent;
+            if (parent != null)
+                MelonLogger.Msg($"[FCS]   parent = '{parent.name}', parent.localScale = {parent.localScale}, parent.localPosition = {parent.localPosition}");
+
+            // 尝试把 MapEntity.Position 通过 coordinateRoot 转换
+            var entitiesProp = fm.GetType().GetProperty("Entities", BindingFlags.Public | BindingFlags.Instance);
+            if (entitiesProp != null)
+            {
+                var entities = entitiesProp.GetValue(fm);
+                if (entities != null)
+                {
+                    var getEnum = entities.GetType().GetMethod("GetEnumerator", BindingFlags.Public | BindingFlags.Instance);
+                    if (getEnum != null)
+                    {
+                        var enumerator = getEnum.Invoke(entities, null);
+                        if (enumerator != null)
+                        {
+                            var moveNext = enumerator.GetType().GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance);
+                            var currentProp = enumerator.GetType().GetProperty("Current", BindingFlags.Public | BindingFlags.Instance);
+                            if (moveNext != null && currentProp != null && (bool)moveNext.Invoke(enumerator, null)!)
+                            {
+                                var kvp = currentProp.GetValue(enumerator);
+                                var valueProp = kvp?.GetType().GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
+                                var me = valueProp?.GetValue(kvp);
+                                var posProp = me?.GetType().GetProperty("Position", BindingFlags.Public | BindingFlags.Instance);
+                                if (posProp != null)
+                                {
+                                    var mapPos = (Vector3)posProp.GetValue(me)!;
+                                    // 试 RectTransformUtility 转换
+                                    var worldFromRect = cr.TransformPoint(mapPos);
+                                    MelonLogger.Msg($"[FCS]   Test: MapEntity.Pos={mapPos} → coordRoot.TransformPoint={worldFromRect}");
+                                    // 试 Draggable Surface TransformPoint
+                                    var ds = GameObject.Find("Draggable Surface")?.transform;
+                                    if (ds != null)
+                                        MelonLogger.Msg($"[FCS]   Test: MapEntity.Pos={mapPos} → DragSurface.TransformPoint={ds.TransformPoint(mapPos)}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex) { MelonLogger.Warning($"[FCS] coordinateRoot dump: {ex.GetType().Name}: {ex.Message}"); }
     }
 
     private static void DumpTimerValue(FireMission fm)
