@@ -10,8 +10,10 @@ using UnityEngine;
 namespace IronNestFCS.Logic;
 
 /// <summary>
-/// 战术雷达：从 FireMissionRoot 扫描敌对单位，调用 TacticalDecider 决策后自动生成射击任务。
-/// 纯读 + 委托调用，不碰装填流水线。
+/// 战术雷达：从 FireMission.Entities Dictionary (MapEntity) 扫描敌对单位，
+/// 调用 TacticalDecider 决策后自动生成射击任务。
+/// 相比旧的 FireMissionRoot.children 方案，Entities 包含全部 40 个目标槽位，
+/// 包括动态 spawn 的第二波 FDC/火炮。
 /// </summary>
 public class TacticalRadar
 {
@@ -22,23 +24,24 @@ public class TacticalRadar
     private const int RoleFortification = 65536;
     private const int RoleTank = 262144;
     private const int RoleReference = 33554432;
-    private const int RoleAmmo = 8;           // 弹药库
-    private const int RoleHighValue = 16;     // 高价值
-
-    // 地下/地堡单位常见名字关键词和 Icon
-    private static readonly string[] UndergroundNameKeys = { "bunker", "underground", "shelter", "bombproof" };
+    private const int RoleAmmo = 8;
+    private const int RoleHighValue = 16;
 
     private readonly FSC fcs;
-    private readonly HashSet<int> sweptIndices = new();
+    private readonly HashSet<string> sweptIds = new();
+
+    // 缓存的 FireMission 引用（按 F9 重载后失效，Scan 内自动刷新）
+    private FireMission? _cachedFm;
+    private PropertyInfo? _entitiesProp;
 
     public bool AutoPlaceMarkers { get; set; } = true;
     public List<TacticalDecider.TargetInfo> AliveHostiles { get; private set; } = new();
-    public int SweptCount => sweptIndices.Count;
+    public int SweptCount => sweptIds.Count;
 
     public TacticalRadar(FSC fcs) => this.fcs = fcs;
 
-    public bool IsSwept(int childIndex) => sweptIndices.Contains(childIndex);
-    public void MarkSwept(int childIndex) => sweptIndices.Add(childIndex);
+    public bool IsSwept(string entityId) => sweptIds.Contains(entityId);
+    public void MarkSwept(string entityId) => sweptIds.Add(entityId);
 
     public void OnGui()
     {
@@ -50,61 +53,136 @@ public class TacticalRadar
         GUI.Label(new Rect(right - 140f, y, 140f, 20f), $"Hostiles: {alive.Count}  Swept: {SweptCount}");
     }
 
-    /// <summary>扫描 FireMissionRoot 下的所有单位，更新存活敌对列表并按优先级+转角排序。</summary>
+    /// <summary>
+    /// 从 FireMission.Entities Dictionary 扫描全部 MapEntity，
+    /// 按 IsAlive && 敌对 过滤，按优先级+转角排序。
+    /// </summary>
     public void Scan()
     {
         AliveHostiles.Clear();
 
-        var fireMissionRoot = GameObject.Find("Fire Mission Root")?.transform;
-        if (fireMissionRoot == null) return;
+        var (fm, entities) = GetEntitiesDict();
+        if (entities == null) return;
+
+        var mapSurface = GameObject.Find("Draggable Surface")?.transform;
+        if (mapSurface == null) return;
 
         var targets = new List<TacticalDecider.TargetInfo>();
 
-        for (int i = 0; i < fireMissionRoot.childCount; i++)
+        // 反射调用 Il2Cpp Dictionary 的 GetEnumerator / MoveNext / Current
+        var getEnum = entities.GetType().GetMethod("GetEnumerator", BindingFlags.Public | BindingFlags.Instance);
+        if (getEnum == null) return;
+
+        var enumerator = getEnum.Invoke(entities, null);
+        if (enumerator == null) return;
+
+        var enumType = enumerator.GetType();
+        var moveNext = enumType.GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance);
+        var currentProp = enumType.GetProperty("Current", BindingFlags.Public | BindingFlags.Instance);
+        if (moveNext == null || currentProp == null) return;
+
+        while ((bool)moveNext.Invoke(enumerator, null)!)
         {
-            var child = fireMissionRoot.GetChild(i);
-            var loc = child.GetComponent<EntityLocation>();
-            if (loc == null) continue;
-            if (!IsAlive(loc, child)) continue;
-            if (!TryReadRole(loc, out int role, out string icon, out int stars, out var immuneShells, out bool entityUnderground)) continue;
+            var kvp = currentProp.GetValue(enumerator);
+            if (kvp == null) continue;
+
+            var kvpType = kvp.GetType();
+            var keyProp = kvpType.GetProperty("Key", BindingFlags.Public | BindingFlags.Instance);
+            var valueProp = kvpType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
+            if (keyProp == null || valueProp == null) continue;
+
+            var key = keyProp.GetValue(kvp)?.ToString() ?? "";
+            var me = valueProp.GetValue(kvp);
+            if (me == null) continue;
+
+            var meType = me.GetType();
+
+            // IsAlive
+            var aliveProp = meType.GetProperty("IsAlive", BindingFlags.Public | BindingFlags.Instance);
+            if (aliveProp == null) continue;
+            if (aliveProp.GetValue(me) is not bool isAlive || !isAlive) continue;
+
+            // Role
+            var roleProp = meType.GetProperty("Role", BindingFlags.Public | BindingFlags.Instance);
+            if (roleProp == null) continue;
+            var roleVal = roleProp.GetValue(me);
+            int role = roleVal is int ri ? ri : roleVal is Enum e ? Convert.ToInt32(e) : -1;
+            if (role < 0) continue;
 
             bool isHostile = (role & RoleEnemy) != 0 || (role & RoleTarget) != 0;
             bool isAlly = (role & RoleAlly) != 0;
             bool isReference = (role & RoleReference) != 0;
-
             if (isReference || (isAlly && !isHostile)) continue;
             if (!isHostile) continue;
 
-            int priority = CalcPriority(role, icon, stars);
-            bool isArmored = (role & RoleFortification) != 0 || (role & RoleTank) != 0
-                             || (role & RoleAmmo) != 0       // 弹药库
-                             || (role & RoleHighValue) != 0  // 补给/高价值仓库
+            // Icon
+            var iconProp = meType.GetProperty("Icon", BindingFlags.Public | BindingFlags.Instance);
+            var icon = iconProp?.GetValue(me) is string s ? s : "";
+
+            // Name
+            var nameProp = meType.GetProperty("Name", BindingFlags.Public | BindingFlags.Instance);
+            var name = nameProp?.GetValue(me) is string sn ? sn : key;
+
+            // Stars
+            var starsProp = meType.GetProperty("Stars", BindingFlags.Public | BindingFlags.Instance);
+            int stars = starsProp?.GetValue(me) is int st ? st : 0;
+
+            // Armour
+            var armourProp = meType.GetProperty("Armour", BindingFlags.Public | BindingFlags.Instance);
+            int armour = armourProp?.GetValue(me) is int ar ? ar : 0;
+
+            // Position (MapEntity.Position 是地图坐标系)
+            var posProp = meType.GetProperty("Position", BindingFlags.Public | BindingFlags.Instance);
+            var mapPos = posProp?.GetValue(me) is Vector3 mp ? mp : Vector3.zero;
+
+            // ImmuneShells
+            var immune = new HashSet<string>();
+            var immuneProp = meType.GetProperty("ImmuneShells", BindingFlags.Public | BindingFlags.Instance);
+            if (immuneProp != null)
+            {
+                var iv = immuneProp.GetValue(me);
+                if (iv is IEnumerable ie)
+                    foreach (var item in ie)
+                        if (item != null) immune.Add(item.ToString() ?? "");
+            }
+
+            // 地下检测：名字/Icon 关键词
+            bool isUnderground = IsUnderground(name, icon);
+
+            // 装甲判断：MapEntity.Armour > 0 或 Role/Icon 匹配
+            bool isArmored = armour > 0
+                             || (role & RoleFortification) != 0
+                             || (role & RoleTank) != 0
+                             || (role & RoleAmmo) != 0
+                             || (role & RoleHighValue) != 0
                              || icon.IndexOf("ammunition", StringComparison.OrdinalIgnoreCase) >= 0
                              || icon.IndexOf("cache", StringComparison.OrdinalIgnoreCase) >= 0
                              || icon.IndexOf("supply", StringComparison.OrdinalIgnoreCase) >= 0
-                             || icon.IndexOf("fire direction", StringComparison.OrdinalIgnoreCase) >= 0; // FDC 是硬化指挥所
-            bool isUnderground = entityUnderground || IsUnderground(child.name, icon);
+                             || icon.IndexOf("fire direction", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            // 坐标：转为世界坐标用于 marker 放置
+            var worldPos = mapSurface.TransformPoint(mapPos);
 
             targets.Add(new TacticalDecider.TargetInfo
             {
-                Name = child.name,
-                Angle = CalcAngle(child.position),
-                Distance = CalcDistance(child.position),
-                Priority = priority,
+                Name = name,
+                EntityId = key,
+                Angle = CalcAngleFromMapPos(mapPos),
+                Distance = CalcDistanceFromMapPos(mapPos),
+                Priority = CalcPriority(role, icon, stars),
                 IsArmored = isArmored,
                 IsUnderground = isUnderground,
-                WorldPos = child.position,
-                ChildIndex = i,
-                ImmuneShells = immuneShells
+                WorldPos = worldPos,
+                ChildIndex = 0, // 不再使用，保留兼容
+                ImmuneShells = immune
             });
         }
 
         TacticalDecider.SortTargets(targets, fcs.Turret.LastSetAngle);
         AliveHostiles = targets;
 
-        // 每次扫描只打印一行汇总
         var summary = string.Join(" | ", targets.Select(t =>
-            $"({t.Priority}){t.Name} {(t.IsUnderground ? "UG" : "")}{(t.IsArmored ? "ARM" : "")}"));
+            $"({t.Priority}){t.EntityId} {(t.IsUnderground ? "UG" : "")}{(t.IsArmored ? "ARM" : "")}"));
         MelonLogger.Msg($"[Radar] {targets.Count} hostiles: {summary}");
 
         if (AutoPlaceMarkers)
@@ -119,170 +197,92 @@ public class TacticalRadar
         }
     }
 
-    // ─── 存活判断 ───
-
-    private static bool IsAlive(EntityLocation loc, Transform t)
+    /// <summary>获取 FireMission.Entities Dictionary（带缓存，F9 重载自动刷新）</summary>
+    private (FireMission? fm, object? dict) GetEntitiesDict()
     {
-        if (!t.gameObject.activeInHierarchy) return false;
         try
         {
-            var enabledProp = loc.GetType().GetProperty("enabled",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (enabledProp != null)
+            // 缓存失效检查
+            if (_cachedFm != null && _entitiesProp != null)
             {
-                var val = enabledProp.GetValue(loc);
-                if (val is bool b && !b) return false;
+                try { var test = _entitiesProp.GetValue(_cachedFm); if (test != null) return (_cachedFm, test); }
+                catch { }
             }
+
+            _cachedFm = null;
+            _entitiesProp = null;
+
+            var fmGo = GameObject.Find("Fire Mission Root");
+            if (fmGo == null) return (null, null);
+            _cachedFm = fmGo.GetComponent<FireMission>();
+            if (_cachedFm == null) return (null, null);
+
+            _entitiesProp = _cachedFm.GetType().GetProperty("Entities", BindingFlags.Public | BindingFlags.Instance);
+            if (_entitiesProp == null) return (null, null);
+
+            var dict = _entitiesProp.GetValue(_cachedFm);
+            return (_cachedFm, dict);
         }
-        catch { }
-        return true;
-    }
-
-    // ─── 角色读取 ───
-
-    private static bool TryReadRole(EntityLocation loc, out int role, out string icon, out int stars,
-        out HashSet<string> immuneShells, out bool isUnderground)
-    {
-        role = -1; icon = ""; stars = 0; immuneShells = new HashSet<string>(); isUnderground = false;
-        try
+        catch
         {
-            var entityProp = loc.GetType().GetProperty("Entity",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (entityProp == null) return false;
-            var entity = entityProp.GetValue(loc);
-            if (entity == null) return false;
-
-            var entType = entity.GetType();
-
-            var roleProp = entType.GetProperty("Role",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (roleProp != null)
-            {
-                var v = roleProp.GetValue(entity);
-                if (v is int i) role = i;
-                else if (v is Enum e) role = Convert.ToInt32(e);
-            }
-
-            var iconProp = entType.GetProperty("Icon",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (iconProp != null)
-            {
-                var v = iconProp.GetValue(entity);
-                if (v is string s) icon = s;
-            }
-
-            var starsProp = entType.GetProperty("Stars",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (starsProp != null)
-            {
-                var v = starsProp.GetValue(entity);
-                if (v is int si) stars = si;
-            }
-
-            // 读 Entity 自带的地下标记（FDC 等目标有独立的地下/地堡 tag）
-            foreach (var propName in new[] { "IsUnderground", "Underground", "IsBunker", "Bunker" })
-            {
-                var ugProp = entType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-                if (ugProp == null) continue;
-                var val = ugProp.GetValue(entity);
-                if (val is bool b && b) { isUnderground = true; break; }
-                if (val is int i && i != 0) { isUnderground = true; break; }
-                if (val is string s && !string.IsNullOrEmpty(s)) { isUnderground = true; break; }
-            }
-
-            // 读取 ImmuneShells：可能是 string[]、Il2Cpp 数组或 IEnumerable
-            var immuneProp = entType.GetProperty("ImmuneShells",
-                BindingFlags.Public | BindingFlags.Instance);
-            if (immuneProp != null)
-            {
-                var val = immuneProp.GetValue(entity);
-                if (val is IEnumerable enumerable)
-                {
-                    foreach (var item in enumerable)
-                    {
-                        if (item != null)
-                            immuneShells.Add(item.ToString() ?? "");
-                    }
-                }
-            }
-
-            return role >= 0;
-        }
-        catch (Exception ex)
-        {
-            MelonLogger.Warning($"[Radar] TryReadRole failed for {loc.name}: {ex.Message}");
-            return false;
+            return (null, null);
         }
     }
 
-    // ─── 优先级计算 ───
+    // ─── 地下检测 ───
 
     private static bool IsUnderground(string name, string icon)
     {
         var low = name.ToLower();
         var lowIcon = icon.ToLower();
-
-        // 名字关键词（地下/地堡/仓库/弹药库）
         foreach (var key in new[] {
             "bunker", "underground", "shelter", "bombproof", "pillbox", "dugout",
             "depot", "storage", "magazine", "cache", "armory", "warehouse",
             "subterranean", "tunnel", "cave", "vault", "casemate"
         })
             if (low.Contains(key)) return true;
-
-        // Icon 里的标签（游戏可能用 underground / bunker / fortification 标记）
         foreach (var key in new[] { "underground", "bunker", "bombproof", "subterranean" })
             if (lowIcon.Contains(key)) return true;
-
         return false;
     }
 
+    // ─── 优先级计算 ───
+
     private static int CalcPriority(int role, string icon, int stars)
     {
-        // 6: FDC（最高优先——暂停 CBT）
         bool isFdc = icon.ToLower().Contains("fire direction");
         if (isFdc) return 6;
 
-        // 5: 火炮
         if ((role & RoleArtillery) != 0) return 5;
 
-        // 4: 弹药库/高价值/3星以上
         if ((role & RoleAmmo) != 0 || (role & RoleHighValue) != 0) return 4;
         if (stars >= 3) return 4;
 
-        // 3: 装甲/工事/1星以上
         if (stars >= 1) return 3;
         if ((role & RoleFortification) != 0 || (role & RoleTank) != 0) return 3;
 
-        // 2: 普通敌人
         if ((role & RoleEnemy) != 0) return 2;
 
         return 1;
     }
 
-    // ─── 坐标 / 角度 / 距离 ───
+    // ─── 坐标计算（MapEntity.Position 是地图坐标系，turret.localPosition 也是）───
 
-    private float CalcAngle(Vector3 worldPos)
+    private float CalcAngleFromMapPos(Vector3 mapPos)
     {
-        var mapSurface = GameObject.Find("Draggable Surface")?.transform;
         var turret = fcs.MapTable.turret;
-        if (mapSurface == null || turret == null) return 0f;
-
-        var localPos = mapSurface.InverseTransformPoint(worldPos);
-        var target = localPos - turret.localPosition;
+        if (turret == null) return 0f;
+        var target = mapPos - turret.localPosition;
         var angle = Vector3.SignedAngle(target, Vector3.up, Vector3.forward);
         if (angle < 0) angle += 360;
         return angle;
     }
 
-    private float CalcDistance(Vector3 worldPos)
+    private float CalcDistanceFromMapPos(Vector3 mapPos)
     {
-        var mapSurface = GameObject.Find("Draggable Surface")?.transform;
         var turret = fcs.MapTable.turret;
-        if (mapSurface == null || turret == null) return 0f;
-
-        var localPos = mapSurface.InverseTransformPoint(worldPos);
-        var target = localPos - turret.localPosition;
+        if (turret == null) return 0f;
+        var target = mapPos - turret.localPosition;
         return target.magnitude * 3.8164f;
     }
 }

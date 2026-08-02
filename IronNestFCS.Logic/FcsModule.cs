@@ -34,33 +34,31 @@ public class FcsModule : IFcsModule
     private void OnGunIdle()
     {
         if (!sweepActive) return;
-        // 两门炮可能在同帧退膛，只触发一次
         if (Time.time < nextSweepTime) return;
         nextSweepTime = Time.time + 0.5f;
 
         if (radar == null || !fcs.IsBound) return;
-        // 每次退膛后自动收紧所有蒸汽阀门
         AdjustAllValves(0f);
         radar.Scan();
 
-        // 清空等待队列（不碰正在执行的任务）
         fcs.ClearPendingTasks();
 
-        // 另一门炮正在打的目标编号，不要分配重复任务
-        var busyTargets = new HashSet<int>();
-        if (fcs.LeftTask != null) busyTargets.Add(fcs.LeftTask.targetId);
-        if (fcs.RightTask != null) busyTargets.Add(fcs.RightTask.targetId);
+        // 用 EntityId 去重（替代旧的 ChildIndex）
+        var busyIds = new HashSet<string>();
+        if (fcs.LeftTask?.entityId is string l and not "") busyIds.Add(l);
+        if (fcs.RightTask?.entityId is string r and not "") busyIds.Add(r);
 
         int added = 0;
+        int nextTargetId = 1;
         foreach (var t in radar.AliveHostiles)
         {
             if (added >= 2) break;
-            // 不重复分配另一门炮正在打的目标
-            if (busyTargets.Contains(t.ChildIndex + 1)) continue;
+            if (busyIds.Contains(t.EntityId)) continue;
 
             var task = new ArtilleryTask
             {
-                targetId = t.ChildIndex + 1,
+                targetId = nextTargetId++,
+                entityId = t.EntityId,
                 angel = t.Angle,
                 distance = t.Distance,
                 position = t.WorldPos,

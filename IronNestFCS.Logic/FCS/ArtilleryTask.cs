@@ -18,6 +18,7 @@ public enum Progress {
 
 public class ArtilleryTask {
     public int targetId;
+    public string entityId = "";   // MapEntity key for dedup
     public float angel;
     public float distance;
     public Vector3 position;

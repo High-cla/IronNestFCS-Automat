@@ -14,13 +14,14 @@ public static class TacticalDecider
     public struct TargetInfo
     {
         public string Name;
+        public string EntityId;     // MapEntity key (e.g. "target1")
         public float Angle;
         public float Distance;
         public int Priority;     // 6:FDC, 5:火炮, 4:弹药库/高价值, 3:装甲/工事, 2:普通, 1:其他
         public bool IsArmored;
         public bool IsUnderground;
         public Vector3 WorldPos;
-        public int ChildIndex;
+        public int ChildIndex;   // deprecated, use EntityId
         /// <summary>目标免疫的弹种 ID 集合（如 {"HE"}），用于自动弹种选择</summary>
         public HashSet<string> ImmuneShells;
     }
