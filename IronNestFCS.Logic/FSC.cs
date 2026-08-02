@@ -101,77 +101,153 @@ public class FSC
     }
 
     /// <summary>
-    /// 探索性扫描：在场景中搜索 Enemy/Spawn/Target/Recon/CBT 相关 GameObject 和组件，
-    /// 输出类型名和关键属性，用于定位反炮兵自动化的数据源。
+    /// 深探 FireMission 的 Il2Cpp Dictionary 结构：
+    ///   .Entities → Dictionary&lt;string, MapEntity&gt; (目标数据库)
+    ///   .RunningTimers → Dictionary&lt;string, TimerValue&gt; (CBT 计时器)
+    /// Il2Cpp 的泛型字典与 .NET 标准 Dictionary API 不同，需要探查正确的读取方式。
     /// </summary>
     private void RunEnemyProbe()
     {
         try
         {
-            // GameObject 名称关键词
-            var nameKeys = new[] {
-                "enemy", "spawn", "target", "artillery", "fdc", "firemission",
-                "counterbattery", "battery", "recon", "photo", "observation",
-                "objective", "mission", "convoy", "infantry", "wave", "manager"
-            };
-            // 组件类型名关键词
-            var typeKeys = new[] {
-                "Enemy", "Spawn", "Target", "Artillery", "FDC", "FireMission",
-                "CounterBattery", "Battery", "Recon", "Photo", "Observation",
-                "Objective", "Mission", "Convoy", "Infantry", "Wave", "Manager",
-                "Spawner", "Database", "Registry"
-            };
+            MelonLogger.Msg("[FCS] === Il2Cpp Dictionary deep probe ===");
+            var fm = GameObject.Find("Fire Mission Root")?.GetComponent<FireMission>();
+            if (fm == null) { MelonLogger.Msg("[FCS]   no FireMission"); return; }
 
-            MelonLogger.Msg("[FCS] === Enemy/Spawn probe ===");
-            var seenTypes = new HashSet<string>();
-            foreach (var t in Object.FindObjectsOfType<Transform>(true))
+            var fmType = fm.GetType();
+
+            // Dump FireMission 自身所有成员（找 Entities/RunningTimers 的真正访问方式）
+            MelonLogger.Msg("[FCS] --- FireMission members ---");
+            foreach (var m in fmType.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic))
             {
-                var nameLow = t.name.ToLower();
-                bool nameMatch = nameKeys.Any(k => nameLow.Contains(k));
-
-                foreach (var c in t.GetComponents<Component>())
+                try
                 {
-                    if (c == null) continue;
-                    var type = c.GetType();
-                    var typeName = type.Name;
-                    var typeNameLow = typeName.ToLower();
-                    bool typeMatch = typeKeys.Any(k => typeNameLow.Contains(k));
-
-                    if (!nameMatch && !typeMatch) continue;
-
-                    // 每种类型只 dump 一次（避免重复刷屏）
-                    var typeKey = type.FullName ?? typeName;
-                    if (seenTypes.Contains(typeKey)) continue;
-                    seenTypes.Add(typeKey);
-
-                    MelonLogger.Msg($"[FCS]   {typeName} on '{t.name}'");
-                    foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                    if (m is PropertyInfo pi)
                     {
-                        if (prop.Name is "transform" or "gameObject" or "tag" or "name" or "hideFlags"
+                        if (pi.Name is "transform" or "gameObject" or "tag" or "name" or "hideFlags"
                             or "m_CachedPtr" or "ObjectClass" or "Pointer" or "WasCollected"
                             or "transformHandle" or "constrainProportionsScale" or "rotationOrder"
-                            or "hierarchyCapacity" or "hierarchyCount" or "root")
+                            or "hierarchyCapacity" or "hierarchyCount" or "root" or "useGUILayout"
+                            or "didStart" or "didAwake" or "enabled" or "isActiveAndEnabled")
                             continue;
                         try
                         {
-                            var val = prop.GetValue(c);
-                            if (val == null) continue;
-                            var str = val.ToString() ?? "";
-                            // 跳过无意义的 ToString（只是类型全名）
-                            if (str == val.GetType().FullName && str.StartsWith("Il2Cpp")) continue;
-                            if (str == typeKey) continue;
-                            MelonLogger.Msg($"[FCS]     .{prop.Name} ({prop.PropertyType.Name}) = {str}");
+                            var v = pi.GetValue(fm);
+                            if (v != null)
+                                MelonLogger.Msg($"[FCS]   prop {pi.Name}: {pi.PropertyType.Name} = {v.GetType().FullName}");
+                            else
+                                MelonLogger.Msg($"[FCS]   prop {pi.Name}: {pi.PropertyType.Name} = null");
                         }
-                        catch { }
+                        catch (Exception ex) { MelonLogger.Msg($"[FCS]   prop {pi.Name}: {pi.PropertyType.Name} → {ex.GetType().Name}: {ex.Message}"); }
                     }
                 }
+                catch { }
             }
-            MelonLogger.Msg($"[FCS] === Probe done: {seenTypes.Count} component types ===\n" +
-                            $"  seen: {string.Join(", ", seenTypes)}");
+
+            // 深探 Entities 字典
+            DumpIl2CppDict(fm, "Entities");
+            // 深探 RunningTimers 字典
+            DumpIl2CppDict(fm, "RunningTimers");
+
+            MelonLogger.Msg("[FCS] === Deep probe done ===");
         }
         catch (Exception ex)
         {
-            MelonLogger.Warning($"[FCS] Enemy probe failed: {ex.Message}");
+            MelonLogger.Warning($"[FCS] Deep probe failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Dump Il2Cpp 泛型字典的所有可访问成员，并尝试读取键值对。</summary>
+    private static void DumpIl2CppDict(FireMission fm, string propName)
+    {
+        try
+        {
+            var prop = fm.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+            if (prop == null) { MelonLogger.Msg($"[FCS]   {propName}: no property"); return; }
+            var dict = prop.GetValue(fm);
+            if (dict == null) { MelonLogger.Msg($"[FCS]   {propName}: null"); return; }
+
+            var dictType = dict.GetType();
+            MelonLogger.Msg($"[FCS] --- {propName}: {dictType.FullName} ---");
+            MelonLogger.Msg($"[FCS]   Base: {dictType.BaseType?.FullName}");
+            foreach (var iface in dictType.GetInterfaces())
+                MelonLogger.Msg($"[FCS]   Interface: {iface.FullName}");
+
+            // Dump 所有 public 成员
+            foreach (var m in dictType.GetMembers(BindingFlags.Public | BindingFlags.Instance))
+            {
+                try
+                {
+                    if (m is PropertyInfo pi)
+                    {
+                        if (pi.GetIndexParameters().Length > 0) continue; // skip indexer
+                        try
+                        {
+                            var v = pi.GetValue(dict);
+                            MelonLogger.Msg($"[FCS]   [{propName}] .{pi.Name} = {v ?? "null"}");
+                        }
+                        catch (Exception ex)
+                        {
+                            MelonLogger.Msg($"[FCS]   [{propName}] .{pi.Name} → {ex.GetType().Name}: {ex.Message}");
+                        }
+                    }
+                    else if (m is MethodInfo mi && !mi.IsSpecialName && mi.DeclaringType == dictType)
+                    {
+                        MelonLogger.Msg($"[FCS]   [{propName}] method {mi.Name}({string.Join(", ", mi.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"))})");
+                    }
+                }
+                catch { }
+            }
+
+            // 尝试通过 IEnumerable 枚举（Il2Cpp Dictionary 可能实现了这个）
+            if (dict is System.Collections.IEnumerable en)
+            {
+                MelonLogger.Msg($"[FCS]   [{propName}] IS IEnumerable → trying enumeration...");
+                try
+                {
+                    var iter = en.GetEnumerator();
+                    if (iter != null)
+                    {
+                        int count = 0;
+                        while (iter.MoveNext() && count < 5)
+                        {
+                            var entry = iter.Current;
+                            if (entry != null)
+                            {
+                                var entryType = entry.GetType();
+                                MelonLogger.Msg($"[FCS]   [{propName}] entry[{count}]: {entryType.FullName}");
+                                // Dump Key/Value on entry
+                                foreach (var ep in entryType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                                {
+                                    try
+                                    {
+                                        var ev = ep.GetValue(entry);
+                                        if (ev != null)
+                                            MelonLogger.Msg($"[FCS]   [{propName}]   .{ep.Name} ({ep.PropertyType.Name}) = {ev}");
+                                        else
+                                            MelonLogger.Msg($"[FCS]   [{propName}]   .{ep.Name} ({ep.PropertyType.Name}) = null");
+                                    }
+                                    catch { }
+                                }
+                            }
+                            count++;
+                        }
+                        MelonLogger.Msg($"[FCS]   [{propName}] enumerated {count} entries");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Msg($"[FCS]   [{propName}] enumerate failed: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+            else
+            {
+                MelonLogger.Msg($"[FCS]   [{propName}] NOT IEnumerable");
+            }
+        }
+        catch (Exception ex)
+        {
+            MelonLogger.Warning($"[FCS] DumpIl2CppDict({propName}) failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
