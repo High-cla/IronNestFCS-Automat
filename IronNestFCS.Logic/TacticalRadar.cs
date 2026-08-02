@@ -67,7 +67,7 @@ public class TacticalRadar
             var loc = child.GetComponent<EntityLocation>();
             if (loc == null) continue;
             if (!IsAlive(loc, child)) continue;
-            if (!TryReadRole(loc, out int role, out string icon, out int stars, out var immuneShells)) continue;
+            if (!TryReadRole(loc, out int role, out string icon, out int stars, out var immuneShells, out bool entityUnderground)) continue;
 
             bool isHostile = (role & RoleEnemy) != 0 || (role & RoleTarget) != 0;
             bool isAlly = (role & RoleAlly) != 0;
@@ -83,7 +83,7 @@ public class TacticalRadar
                              || icon.IndexOf("ammunition", StringComparison.OrdinalIgnoreCase) >= 0
                              || icon.IndexOf("cache", StringComparison.OrdinalIgnoreCase) >= 0
                              || icon.IndexOf("supply", StringComparison.OrdinalIgnoreCase) >= 0;
-            bool isUnderground = IsUnderground(child.name, icon);
+            bool isUnderground = entityUnderground || IsUnderground(child.name, icon);
 
             targets.Add(new TacticalDecider.TargetInfo
             {
@@ -140,9 +140,10 @@ public class TacticalRadar
 
     // ─── 角色读取 ───
 
-    private static bool TryReadRole(EntityLocation loc, out int role, out string icon, out int stars, out HashSet<string> immuneShells)
+    private static bool TryReadRole(EntityLocation loc, out int role, out string icon, out int stars,
+        out HashSet<string> immuneShells, out bool isUnderground)
     {
-        role = -1; icon = ""; stars = 0; immuneShells = new HashSet<string>();
+        role = -1; icon = ""; stars = 0; immuneShells = new HashSet<string>(); isUnderground = false;
         try
         {
             var entityProp = loc.GetType().GetProperty("Entity",
@@ -188,6 +189,17 @@ public class TacticalRadar
             {
                 var v = starsProp.GetValue(entity);
                 if (v is int si) stars = si;
+            }
+
+            // 读 Entity 自带的地下标记（FDC 等目标有独立的地下/地堡 tag）
+            foreach (var propName in new[] { "IsUnderground", "Underground", "IsBunker", "Bunker" })
+            {
+                var ugProp = entType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+                if (ugProp == null) continue;
+                var val = ugProp.GetValue(entity);
+                if (val is bool b && b) { isUnderground = true; break; }
+                if (val is int i && i != 0) { isUnderground = true; break; }
+                if (val is string s && !string.IsNullOrEmpty(s)) { isUnderground = true; break; }
             }
 
             // 读取 ImmuneShells：可能是 string[]、Il2Cpp 数组或 IEnumerable
