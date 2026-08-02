@@ -82,7 +82,8 @@ public class TacticalRadar
                              || (role & RoleHighValue) != 0  // 补给/高价值仓库
                              || icon.IndexOf("ammunition", StringComparison.OrdinalIgnoreCase) >= 0
                              || icon.IndexOf("cache", StringComparison.OrdinalIgnoreCase) >= 0
-                             || icon.IndexOf("supply", StringComparison.OrdinalIgnoreCase) >= 0;
+                             || icon.IndexOf("supply", StringComparison.OrdinalIgnoreCase) >= 0
+                             || icon.IndexOf("fire direction", StringComparison.OrdinalIgnoreCase) >= 0; // FDC 是硬化指挥所
             bool isUnderground = entityUnderground || IsUnderground(child.name, icon);
 
             targets.Add(new TacticalDecider.TargetInfo
