@@ -160,15 +160,26 @@ public class TacticalRadar
                              || icon.IndexOf("supply", StringComparison.OrdinalIgnoreCase) >= 0
                              || icon.IndexOf("fire direction", StringComparison.OrdinalIgnoreCase) >= 0;
 
-            // 坐标：转为世界坐标用于 marker 放置
-            var worldPos = mapSurface.TransformPoint(mapPos);
+            // 坐标：优先从 EntityLocation (Location) 取世界坐标
+            Vector3 worldPos;
+            var locProp = meType.GetProperty("Location", BindingFlags.Public | BindingFlags.Instance);
+            var location = locProp?.GetValue(me) as EntityLocation;
+            if (location != null)
+            {
+                worldPos = location.transform.position;
+            }
+            else
+            {
+                // 未 spawn 的实体：尝试 MapEntity.Position 转世界坐标
+                worldPos = mapSurface.TransformPoint(mapPos);
+            }
 
             targets.Add(new TacticalDecider.TargetInfo
             {
                 Name = name,
                 EntityId = key,
-                Angle = CalcAngleFromMapPos(mapPos),
-                Distance = CalcDistanceFromMapPos(mapPos),
+                Angle = CalcAngle(worldPos),
+                Distance = CalcDistance(worldPos),
                 Priority = CalcPriority(role, icon, stars),
                 IsArmored = isArmored,
                 IsUnderground = isUnderground,
@@ -266,23 +277,27 @@ public class TacticalRadar
         return 1;
     }
 
-    // ─── 坐标计算（MapEntity.Position 是地图坐标系，turret.localPosition 也是）───
+    // ─── 坐标计算（世界坐标 → 地图坐标系）───
 
-    private float CalcAngleFromMapPos(Vector3 mapPos)
+    private float CalcAngle(Vector3 worldPos)
     {
+        var mapSurface = GameObject.Find("Draggable Surface")?.transform;
         var turret = fcs.MapTable.turret;
-        if (turret == null) return 0f;
-        var target = mapPos - turret.localPosition;
+        if (mapSurface == null || turret == null) return 0f;
+        var localPos = mapSurface.InverseTransformPoint(worldPos);
+        var target = localPos - turret.localPosition;
         var angle = Vector3.SignedAngle(target, Vector3.up, Vector3.forward);
         if (angle < 0) angle += 360;
         return angle;
     }
 
-    private float CalcDistanceFromMapPos(Vector3 mapPos)
+    private float CalcDistance(Vector3 worldPos)
     {
+        var mapSurface = GameObject.Find("Draggable Surface")?.transform;
         var turret = fcs.MapTable.turret;
-        if (turret == null) return 0f;
-        var target = mapPos - turret.localPosition;
+        if (mapSurface == null || turret == null) return 0f;
+        var localPos = mapSurface.InverseTransformPoint(worldPos);
+        var target = localPos - turret.localPosition;
         return target.magnitude * 3.8164f;
     }
 }
