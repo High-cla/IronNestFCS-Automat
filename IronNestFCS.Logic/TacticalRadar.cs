@@ -33,6 +33,7 @@ public class TacticalRadar
     // 缓存的 FireMission 引用（按 F9 重载后失效，Scan 内自动刷新）
     private FireMission? _cachedFm;
     private PropertyInfo? _entitiesProp;
+    private static bool _coordMappingDumped;  // 一次性 dump 坐标映射
 
     public bool AutoPlaceMarkers { get; set; } = true;
     public List<TacticalDecider.TargetInfo> AliveHostiles { get; private set; } = new();
@@ -162,6 +163,20 @@ public class TacticalRadar
             var location = locProp?.GetValue(me) as EntityLocation;
             if (location == null) continue;
             Vector3 worldPos = location.transform.position;
+
+            // 一次性 dump 坐标映射关系：MapEntity.Position ↔ Location 世界坐标
+            if (!_coordMappingDumped && isHostile)
+            {
+                _coordMappingDumped = true;
+                var mapSurface = GameObject.Find("Draggable Surface")?.transform;
+                var localFromWorld = mapSurface != null ? mapSurface.InverseTransformPoint(worldPos) : Vector3.zero;
+                var worldFromMapPos = mapSurface != null ? mapSurface.TransformPoint(mapPos) : Vector3.zero;
+                MelonLogger.Msg($"[Radar] Coord mapping for '{key}':");
+                MelonLogger.Msg($"[Radar]   MapEntity.Position = {mapPos}");
+                MelonLogger.Msg($"[Radar]   Location worldPos  = {worldPos}");
+                MelonLogger.Msg($"[Radar]   InvTfPt(worldPos)  = {localFromWorld}  (map-local from world)");
+                MelonLogger.Msg($"[Radar]   TfPt(mapPos)       = {worldFromMapPos}  (world from MapEntity.Pos)");
+            }
 
             targets.Add(new TacticalDecider.TargetInfo
             {
