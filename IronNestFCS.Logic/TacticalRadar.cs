@@ -64,9 +64,6 @@ public class TacticalRadar
         var (fm, entities) = GetEntitiesDict();
         if (entities == null) return;
 
-        var mapSurface = GameObject.Find("Draggable Surface")?.transform;
-        if (mapSurface == null) return;
-
         var targets = new List<TacticalDecider.TargetInfo>();
 
         // 反射调用 Il2Cpp Dictionary 的 GetEnumerator / MoveNext / Current
@@ -160,19 +157,11 @@ public class TacticalRadar
                              || icon.IndexOf("supply", StringComparison.OrdinalIgnoreCase) >= 0
                              || icon.IndexOf("fire direction", StringComparison.OrdinalIgnoreCase) >= 0;
 
-            // 坐标：优先从 EntityLocation (Location) 取世界坐标
-            Vector3 worldPos;
+            // 坐标：从 EntityLocation (Location) 取世界坐标；无 Location = 未 spawn，跳过
             var locProp = meType.GetProperty("Location", BindingFlags.Public | BindingFlags.Instance);
             var location = locProp?.GetValue(me) as EntityLocation;
-            if (location != null)
-            {
-                worldPos = location.transform.position;
-            }
-            else
-            {
-                // 未 spawn 的实体：尝试 MapEntity.Position 转世界坐标
-                worldPos = mapSurface.TransformPoint(mapPos);
-            }
+            if (location == null) continue;
+            Vector3 worldPos = location.transform.position;
 
             targets.Add(new TacticalDecider.TargetInfo
             {
