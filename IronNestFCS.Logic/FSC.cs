@@ -359,6 +359,7 @@ public class FSC
         _taskQueue.Clear();
         LeftTask = null;
         RightTask = null;
+        _firedAt.Clear();
 
         _sceneInteractor.ShutDown();
         try { _harmony?.UnpatchSelf(); }
@@ -425,6 +426,14 @@ public class FSC
 
     /// <summary>任一炮管退膛时触发回调（WaitBackToIdle 完成后）。供雷达层刷新队列。</summary>
     public event Action? OnGunIdle;
+
+    // 在飞窗口：目标被任一炮击发后，InFlightWindow 秒内不再次纳入扫荡派发。
+    // 800mm 一发成杀——弹未落地就补一发 = 白烧整条射循环，双管互换互打同理。
+    // 需 ≥ 实际最大飞行时间，按 800mm 实测取 45s；打偏存活的目标靠窗口到期后的重扫再打。
+    private const float InFlightWindow = 45f;
+    private readonly Dictionary<string, float> _firedAt = new();
+    public bool InFlight(string entityId) =>
+        _firedAt.TryGetValue(entityId, out var t) && Time.time - t < InFlightWindow;
 
     /// <summary>清空待处理队列（不碰正在执行的任务）。</summary>
     public void ClearPendingTasks() {
@@ -572,6 +581,7 @@ public class FSC
                     TriggerConsole.Fire();
                 }
                 yield return gunSys.WaitFire();
+                _firedAt[task.entityId] = Time.time;
             }
             finally {
                 ReleaseTurretOnce(turret);

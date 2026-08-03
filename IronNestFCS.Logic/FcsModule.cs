@@ -30,7 +30,7 @@ public class FcsModule : IFcsModule
         return bound;
     }
 
-    /// <summary>任一炮管退膛 → 扫描 → 清空队列 → 填入最新 Top 2</summary>
+    /// <summary>任一炮管退膛 → 扫描 → 清空队列 → 给每门空闲炮管各派一个目标。扫荡中每 5s 也跑一次，用于在飞窗口到期后恢复派发。</summary>
     private void OnGunIdle()
     {
         if (!sweepActive) return;
@@ -48,12 +48,18 @@ public class FcsModule : IFcsModule
         if (fcs.LeftTask?.entityId is string l and not "") busyIds.Add(l);
         if (fcs.RightTask?.entityId is string r and not "") busyIds.Add(r);
 
-        int added = 0;
+        // 逐空闲炮管派发（TryDispatch 按 Left→Right 取队首，入队顺序即分配顺序）。
+        // 在飞窗口约束：任一炮击发过的目标，InFlightWindow 内不再纳入派发——
+        // 800mm 一发成杀，弹未落地就补一发 = 白烧整条射循环。窗口期内两管空等，
+        // 由 Update 的周期重扫在窗口到期后恢复派发（含打偏存活的目标）。
         int nextTargetId = 1;
-        foreach (var t in radar.AliveHostiles)
+        foreach (var barrel in new[] { LeftRight.Left, LeftRight.Right })
         {
-            if (added >= 2) break;
-            if (busyIds.Contains(t.EntityId)) continue;
+            if (barrel == LeftRight.Left ? fcs.LeftTask != null : fcs.RightTask != null) continue;
+
+            var t = PickTarget(busyIds);
+            if (t == null) continue;
+            busyIds.Add(t.EntityId);
 
             var task = new ArtilleryTask
             {
@@ -65,25 +71,36 @@ public class FcsModule : IFcsModule
                 bulletType = TacticalDecider.ChooseShellType(t),
                 useMaxCharge = TacticalDecider.ShouldUseMaxCharge(t)
             };
-
-            if (t.Priority >= 4)
-                fcs.EnqueueTaskFront(task);
-            else
-                fcs.EnqueueTask(task);
-
-            added++;
+            fcs.EnqueueTask(task);
         }
+    }
+
+    /// <summary>
+    /// 为某炮管挑目标：AliveHostiles 已按优先级排序，取第一个未占用且不在在飞窗口内的。
+    /// 全部可选目标都在飞/被占用 → 返回 null，炮管空等；窗口到期后由周期重扫恢复派发。
+    /// </summary>
+    private TacticalDecider.TargetInfo? PickTarget(HashSet<string> busyIds)
+    {
+        foreach (var t in radar.AliveHostiles)
+        {
+            if (busyIds.Contains(t.EntityId)) continue;
+            if (fcs.InFlight(t.EntityId)) continue;
+            return t;
+        }
+        return null;
     }
 
     public void Update()
     {
         fcs.Update();
 
-        // 被动扫描（只显示敌情）
+        // 被动扫描（不扫荡时只更新敌情显示；扫荡时顺带重扫+派发——在飞窗口到期后，
+        // 或双管全空等时，靠这个每 5s 的周期把新任务派出去）
         if (radar != null && fcs.IsBound && Time.time - lastScanTime > 5f)
         {
-            radar.Scan();
             lastScanTime = Time.time;
+            if (sweepActive) OnGunIdle();
+            else radar.Scan();
         }
 
         // 轮询 CBT 计时器（每 5s），只在发现 timer 时打日志
