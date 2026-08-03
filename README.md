@@ -4,7 +4,7 @@
 
 基于 [svr2kos2](https://github.com/svr2kos2) FCS 的全自动火控 Mod，为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！
 
-A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (origin-fcs) — a **fully automatic Fire Control System** for *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)*: press Numpad 0 and let the mod handle the rest.
+A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS — a **fully automatic Fire Control System** for *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)*: press Numpad 0 and let the mod handle the rest.
 
 > 基于游戏 Demo 版本开发，使用 IL2CPP + MelonLoader。Built for the Demo version using IL2CPP + MelonLoader.
 
@@ -110,7 +110,7 @@ MIT © 2025-2026 KK，基于 svr2kos2 的作品（MIT © 2026 svr2kos2）。
 
 ### What is this
 
-A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork of svr2kos2's original FCS (origin-fcs): it's a **full-auto sweep** — enable it and the mod continuously scans all targets, solves ballistics, picks shell types, purchases/loads ammunition, aims, confirms, and fires. Unattended combat for hours.
+A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork of svr2kos2's original FCS: it's a **full-auto sweep** — enable it and the mod continuously scans all targets, solves ballistics, picks shell types, purchases/loads ammunition, aims, confirms, and fires. Unattended combat for hours.
 
 ### Core Features
 

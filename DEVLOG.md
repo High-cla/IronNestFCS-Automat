@@ -1,7 +1,7 @@
 # Dev Log — 2025-07-25
 
 ## 架构
-在原版 origin-fcs 基础上渐进式添加战术智能，安全边界：不改 GunSystem / BallisticCalc / TriggerConsole / CoroutineLock。
+在原版 svr2kos2 FCS 基础上渐进式添加战术智能，安全边界：不改 GunSystem / BallisticCalc / TriggerConsole / CoroutineLock。
 
 ## 今日改动
 
