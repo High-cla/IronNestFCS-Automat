@@ -20,6 +20,10 @@
 **/.idea/**/*.iml
 **/.idea/**/contentModel.xml
 **/.idea/**/modules.xml
+**/.idea/**/encodings.xml
+**/.idea/**/indexLayout.xml
+**/.idea/**/vcs.xml
+**/.idea/**/.gitignore
 
 *.suo
 *.user
@@ -31,7 +35,7 @@ _UpgradeReport_Files/
 
 Thumbs.db
 Desktop.ini
-.DS_Storetmp/
+.DS_Store
 
 tmp/
 release/

@@ -7,8 +7,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IronNestFCS.Abstractions", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IronNestFCS.Logic", "IronNestFCS.Logic\IronNestFCS.Logic.csproj", "{029CEB7C-2D51-494B-8994-CD12CAE74897}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IronNestFCS.CustomRecords", "IronNestFCS.CustomRecords\IronNestFCS.CustomRecords.csproj", "{E51E3B66-F2D8-42CD-BA63-9E56607E43C1}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,9 +25,5 @@ Global
 		{029CEB7C-2D51-494B-8994-CD12CAE74897}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{029CEB7C-2D51-494B-8994-CD12CAE74897}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{029CEB7C-2D51-494B-8994-CD12CAE74897}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E51E3B66-F2D8-42CD-BA63-9E56607E43C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{E51E3B66-F2D8-42CD-BA63-9E56607E43C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{E51E3B66-F2D8-42CD-BA63-9E56607E43C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{E51E3B66-F2D8-42CD-BA63-9E56607E43C1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
