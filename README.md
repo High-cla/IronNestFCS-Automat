@@ -2,7 +2,7 @@
 
 [演示视频 / Demo Video](https://www.bilibili.com/video/BV1y4gd6tEuT/) | [简体中文](#简体中文) | [English](#english)
 
-基于 [svr2kos2](https://github.com/svr2kos2)  FCS的全自动火控 Mod，为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！。
+基于 [svr2kos2](https://github.com/svr2kos2)  FCS的全自动火控 Mod，为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！
 
 A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (origin-fcs) — a **fully automatic Fire Control System** for *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)*: press Numpad 0 and let the mod handle the rest.
 
@@ -14,22 +14,23 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (origin-fcs) — a 
 
 ### 这是什么
 
-为《铁巢：重炮模拟器》编写的 MelonLoader Mod。本仓库是 svr2kos2 原版 FCS 的魔改分支，主打**全自动扫荡**：开启后 Mod 持续扫描全图敌情，自动完成弹道解算、弹种选择、采购装填、瞄准击发。
+为《铁巢：重炮模拟器》编写的 MelonLoader Mod。本仓库是 svr2kos2 原版 FCS 的魔改分支：开启后 Mod 持续扫描全图敌情，自动完成弹道解算、弹种选择、采购装填、瞄准击发。
 
 ### 核心功能
 
 #### Numpad 0 全自动扫荡（核心玩法）
-- 按 **Numpad 0** 启动/停止自动扫荡，开启后无需任何手动操作（仍需要在桌上通过面板上的 Auto Fire 开关切换是手动还是自动完成最后的击发动作）：扫描 → 决策 → 打击 → 补弹 → 再扫描，循环不止
+- 按 **Numpad 0** 启动/停止自动扫荡，开启后无需任何手动操作（可在桌上面板上开启 Auto Fire自动完成最后的击发动作）：扫描 → 决策 → 打击 → 补弹 → 再扫描，循环不止
 - **无小键盘的键盘？按 Ctrl+0** 效果相同（手动打击 Numpad 1-4 也备有 Ctrl+1-4）
 - 雷达直接读取游戏 `FireMission.Entities` 目标注册表
 - 双炮并行调度：任务自动派给空闲炮管，退膛完成自动接力
 - 缺弹自动采购
 - 蒸汽泄漏自动处理：开火后自动检测泄漏，旋紧阀门
+- 操作员只需要操作咖啡机，并欣赏唱片机音乐
 
 #### 战术决策
 - **弹道自动解算**：自动设定装药、弹种、仰角与方向角
 - **智能弹种选择**：装甲/工事/弹药库/地下等硬目标自动打 AP，软目标打 HE，尊重目标 `ImmuneShells` 属性避开无效弹种
-- **优先级排序**：6 级目标优先级 — FDC(6) > 火炮(5) > 弹药库/高价值/3★(4) > 装甲/工事/1★(3) > 普通(2) > 其他(1)，同级按综合时间成本排序（距离×2.56 + 角度差×0.30）
+- **优先级排序**：6 级目标优先级 — FDC(6) > 火炮(5) > 弹药库/高价值/3★(4) > 装甲/工事/1★(3) > 普通(2) > 其他(1)。同级按综合时间成本排序（距离×2.56 + 角度差×0.30）
 
 #### 手动模式
 - Numpad 1-4（或 Ctrl+1-4）对标记目标 T1~T4 手动下达打击任务
@@ -109,7 +110,7 @@ MIT © 2025-2026 KK，基于 svr2kos2 的作品（MIT © 2026 svr2kos2）。
 
 ### What is this
 
-A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork of svr2kos2's original FCS (origin-fcs): instead of "click, then shoot", it's a **full-auto sweep** — enable it and the mod continuously scans all targets, solves ballistics, picks shell types, purchases/loads ammunition, aims, confirms, and fires. Unattended combat for hours.
+A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork of svr2kos2's original FCS (origin-fcs):  it's a **full-auto sweep** — enable it and the mod continuously scans all targets, solves ballistics, picks shell types, purchases/loads ammunition, aims, confirms, and fires. Unattended combat for hours.
 
 ### Core Features
 
