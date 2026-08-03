@@ -2,9 +2,9 @@
 
 [演示视频 / Demo Video](https://www.bilibili.com/video/BV1y4gd6tEuT/) | [简体中文](#简体中文) | [English](#english)
 
-基于 [svr2kos2](https://github.com/svr2kos2) FCS 的全自动火控 Mod，为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！
+基于 [svr2kos2](https://github.com/svr2kos2) FCS 的全自动火控 Mod（战术雷达参考 [gxpppp](https://github.com/gxpppp/IronNestFCS) 的实现），为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！
 
-A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS — a **fully automatic Fire Control System** for *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)*: press Numpad 0 and let the mod handle the rest.
+A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar inspired by [gxpppp](https://github.com/gxpppp/IronNestFCS)) — a **fully automatic Fire Control System** for *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)*: press Numpad 0 and let the mod handle the rest.
 
 > 基于游戏 Demo 版本开发，使用 IL2CPP + MelonLoader。Built for the Demo version using IL2CPP + MelonLoader.
 
@@ -98,7 +98,7 @@ dotnet build IronNestFCS.sln -c Release
 
 ### 许可证
 
-MIT © 2025-2026 KK，基于 svr2kos2 的作品（MIT © 2026 svr2kos2）。
+MIT © 2025-2026 KK，基于 svr2kos2 的作品（MIT © 2026 svr2kos2），战术雷达参考 gxpppp 的 [IronNestFCS](https://github.com/gxpppp/IronNestFCS)。
 
 ### 免责声明
 
@@ -193,7 +193,7 @@ Issues and pull requests welcome. When touching FCS logic: no new IL2CPP types, 
 
 ### License
 
-MIT © 2025-2026 KK, based on work by svr2kos2 (MIT © 2026 svr2kos2).
+MIT © 2025-2026 KK, based on work by svr2kos2 (MIT © 2026 svr2kos2); tactical radar inspired by gxpppp's [IronNestFCS](https://github.com/gxpppp/IronNestFCS).
 
 ### Disclaimer
 
