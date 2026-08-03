@@ -2,7 +2,7 @@
 
 [演示视频 / Demo Video](https://www.bilibili.com/video/BV1y4gd6tEuT/) | [简体中文](#简体中文) | [English](#english)
 
-基于 [svr2kos2](https://github.com/svr2kos2)  FCS的全自动火控 Mod，为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！
+基于 [svr2kos2](https://github.com/svr2kos2) FCS 的全自动火控 Mod，为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！
 
 A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (origin-fcs) — a **fully automatic Fire Control System** for *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)*: press Numpad 0 and let the mod handle the rest.
 
@@ -19,7 +19,7 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (origin-fcs) — a 
 ### 核心功能
 
 #### Numpad 0 全自动扫荡（核心玩法）
-- 按 **Numpad 0** 启动/停止自动扫荡，开启后无需任何手动操作（可在桌上面板上开启 Auto Fire自动完成最后的击发动作）：扫描 → 决策 → 打击 → 补弹 → 再扫描，循环不止
+- 按 **Numpad 0** 启动/停止自动扫荡，开启后无需任何手动操作（可在桌上面板上开启 Auto Fire 自动完成最后的击发动作）：扫描 → 决策 → 打击 → 补弹 → 再扫描，循环不止
 - **无小键盘的键盘？按 Ctrl+0** 效果相同（手动打击 Numpad 1-4 也备有 Ctrl+1-4）
 - 雷达直接读取游戏 `FireMission.Entities` 目标注册表
 - 双炮并行调度：任务自动派给空闲炮管，退膛完成自动接力
@@ -110,7 +110,7 @@ MIT © 2025-2026 KK，基于 svr2kos2 的作品（MIT © 2026 svr2kos2）。
 
 ### What is this
 
-A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork of svr2kos2's original FCS (origin-fcs):  it's a **full-auto sweep** — enable it and the mod continuously scans all targets, solves ballistics, picks shell types, purchases/loads ammunition, aims, confirms, and fires. Unattended combat for hours.
+A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork of svr2kos2's original FCS (origin-fcs): it's a **full-auto sweep** — enable it and the mod continuously scans all targets, solves ballistics, picks shell types, purchases/loads ammunition, aims, confirms, and fires. Unattended combat for hours.
 
 ### Core Features
 
