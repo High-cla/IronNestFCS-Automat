@@ -102,7 +102,7 @@ MIT © 2025-2026 KK，基于 svr2kos2 的作品（MIT © 2026 svr2kos2），战�
 
 ### 免责声明
 
-本项目为非官方第三方 Mod，与游戏开发商无关。仅供学习与单机娱乐使用，使用风险自负。
+本项目为非官方第三方 Mod，与游戏开发商无关。本 Mod 会自动化操作游戏，若游戏提供线上排行榜，建议游玩前在设置中关闭，以免成绩不被认可或被误判为作弊封禁。仅供学习与单机娱乐使用，使用风险自负。
 
 ---
 
@@ -197,4 +197,4 @@ MIT © 2025-2026 KK, based on work by svr2kos2 (MIT © 2026 svr2kos2); tactical 
 
 ### Disclaimer
 
-This is an unofficial third-party mod, not affiliated with the game developer. For educational and single-player entertainment use only. Use at your own risk.
+This is an unofficial third-party mod, not affiliated with the game developer. This mod automates gameplay; if the game offers online leaderboards, we recommend disabling them in the settings before playing to avoid unrecognized scores or potential bans. For educational and single-player entertainment use only. Use at your own risk.
