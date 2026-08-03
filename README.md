@@ -14,7 +14,7 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (origin-fcs) — a 
 
 ### 这是什么
 
-为《铁巢：重炮模拟器》编写的 MelonLoader Mod。本仓库是 svr2kos2 原版 FCS 的魔改分支：开启后 Mod 持续扫描全图敌情，自动完成弹道解算、弹种选择、采购装填、瞄准击发。
+为《铁巢：重炮模拟器》编写的 MelonLoader Mod。本仓库是 svr2kos2 原版 FCS 的分支：开启后 Mod 持续扫描全图敌情，自动完成弹道解算、弹种选择、采购装填、瞄准击发。
 
 ### 核心功能
 
