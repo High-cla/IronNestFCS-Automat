@@ -18,7 +18,7 @@ public class FcsModule : IFcsModule
     private float lastScanTime;
     private float nextSweepTime;
     private float lastCbtPollTime;
-    private bool sweepActive;
+    private bool autoMode;          // 全自动模式:true=雷达接管;false=手动(雷达完全休眠)
     private int lastCbtCount = -1;  // 检测 CBT timer 数量变化
 
     public bool Initialize()
@@ -33,7 +33,7 @@ public class FcsModule : IFcsModule
     /// <summary>任一炮管退膛 → 扫描 → 清空队列 → 给每门空闲炮管各派一个目标。扫荡中每 5s 也跑一次，用于在飞窗口到期后恢复派发。</summary>
     private void OnGunIdle()
     {
-        if (!sweepActive) return;
+        if (!autoMode) return;
         if (Time.time < nextSweepTime) return;
         nextSweepTime = Time.time + 0.5f;
 
@@ -94,17 +94,16 @@ public class FcsModule : IFcsModule
     {
         fcs.Update();
 
-        // 被动扫描（不扫荡时只更新敌情显示；扫荡时顺带重扫+派发——在飞窗口到期后，
-        // 或双管全空等时，靠这个每 5s 的周期把新任务派出去）
-        if (radar != null && fcs.IsBound && Time.time - lastScanTime > 5f)
+        // 被动扫描:全自动模式下每 5s 周期重扫+派发(在飞窗口到期后恢复派发,或双管全空时补派);
+        // 手动模式雷达完全休眠
+        if (radar != null && fcs.IsBound && autoMode && Time.time - lastScanTime > 5f)
         {
             lastScanTime = Time.time;
-            if (sweepActive) OnGunIdle();
-            else radar.Scan();
+            OnGunIdle();
         }
 
-        // 轮询 CBT 计时器（每 5s），只在发现 timer 时打日志
-        if (fcs.IsBound && Time.time - lastCbtPollTime > 5f)
+        // 轮询 CBT 计时器（每 5s），只在发现 timer 时打日志——仅全自动模式
+        if (fcs.IsBound && autoMode && Time.time - lastCbtPollTime > 5f)
         {
             lastCbtPollTime = Time.time;
             var (hasTimer, info) = fcs.PollRunningTimers();
@@ -120,16 +119,22 @@ public class FcsModule : IFcsModule
             }
         }
 
+        // 手柄:Select 键切换全自动/手动模式(等价 Numpad 0)
+        var gp = Gamepad.current;
+        if (gp != null && gp.selectButton.wasPressedThisFrame && fcs.IsBound)
+        {
+            ToggleAutoMode();
+            return;
+        }
+
         var kb = Keyboard.current;
         if (kb == null || !fcs.IsBound)
             return;
 
-        // Numpad 0: 启动/停止扫荡循环
+        // Numpad 0: 切换全自动/手动模式
         if (kb.numpad0Key.wasPressedThisFrame || (kb.ctrlKey.isPressed && kb.digit0Key.wasPressedThisFrame))
         {
-            sweepActive = !sweepActive;
-            nextSweepTime = 0;  // 重设时间窗，防止立即触发的首轮被防重入窗口跳过
-            if (sweepActive) OnGunIdle();
+            ToggleAutoMode();
             return;
         }
 
@@ -142,6 +147,24 @@ public class FcsModule : IFcsModule
             fcs.FireTarget(3);
         else if (kb.numpad4Key.wasPressedThisFrame || (kb.ctrlKey.isPressed && kb.digit4Key.wasPressedThisFrame))
             fcs.FireTarget(4);
+    }
+
+    /// <summary>切换全自动/手动模式。切手动时清空自动队列(正在打的不打断,打完自然停)。</summary>
+    private void ToggleAutoMode()
+    {
+        autoMode = !autoMode;
+        nextSweepTime = 0;  // 重设时间窗，防止立即触发的首轮被防重入窗口跳过
+        if (!autoMode)
+        {
+            fcs.ClearPendingTasks();   // 手动接管:清掉自动入队的队列
+            MelonLogger.Msg("[FCS] 手动模式:雷达休眠,手动标点 T1-T4 接管");
+        }
+        else
+        {
+            OnGunIdle();
+            MelonLogger.Msg("[FCS] 全自动模式:雷达接管");
+        }
+        if (window != null) window.AutoSweepEnabled = autoMode;
     }
 
     public void OnGui()
