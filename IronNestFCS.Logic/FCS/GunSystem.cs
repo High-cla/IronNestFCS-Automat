@@ -9,10 +9,25 @@ namespace IronNestFCS.Logic.FCS;
 
 public enum BulletType {
     AP = 1,
-    HCHE = 2,
-    HE = 3,
-    STAR = 4,
-    SMK = 5,
+    APHE = 2,
+    ATMC = 3,
+    CLMN = 4,
+    CYAN = 5,
+    DRIL = 6,
+    EQKE = 7,
+    FLCH = 8,
+    HCHE = 9,
+    HE = 10,
+    INCN = 11,
+    LE = 12,
+    PLCM = 13,
+    PHGN = 14,
+    PRPG = 15,
+    SMK = 16,
+    STAR = 17,
+    TEAR = 18,
+    THRM = 19,
+    WP = 20,
 }
 
 public class GunSystem {
@@ -77,13 +92,17 @@ public class GunSystem {
     }
     
     public bool CanFire() {
-        return gunController.CanFire;
+        return gunController != null && gunController.CanFire;
     }
 
     public IEnumerator SetElevation(float elevation) {
+        if (elevationLever == null || gunController == null) {
+            MelonLogger.Error($"[FCS] GunSystem {_surfix}: Elevation lever or gun controller unbound");
+            yield break;
+        }
         elevationLever.SetSliderValue(elevation);
         yield return new WaitForSeconds(0.1f);
-        while (gunController.CurrentElevation != elevation) {
+        while (!Mathf.Approximately(gunController.CurrentElevation, elevation)) {
             elevationLever.SetSliderValue(elevation);
             yield return new WaitForSeconds(1f);
         }
@@ -168,14 +187,14 @@ public class GunSystem {
     public IEnumerator WaitBackToIdle() {
         // ponytail: 13s 不是魔数，是炮管退膛→抛壳→复进→闭锁的机械循环时间。
         // 改短会导致下一发装填时 breech 未复位，装填卡住。
-        while (gunController.elevationChangeVelocity != 0) {
+        while (gunController != null && gunController.elevationChangeVelocity != 0) {
             yield return new WaitForSeconds(0.1f);
         }
         yield return new WaitForSeconds(13);
     }
 
     public IEnumerator WaitFire() {
-        while (!gunController.pendingReload) {
+        while (gunController != null && !gunController.pendingReload) {
             yield return new WaitForSeconds(0.1f);
         }
     }
