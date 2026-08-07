@@ -5,12 +5,14 @@ using UnityEngine;
 namespace IronNestFCS.Logic.FCS;
 
 public class MapTable {
-    
-    public Transform? turret;
-    public Dictionary<int, Transform> artilleries;
-    public Transform? fireMissionRoot;
-    public FireMission? FireMission;
+    private Transform? turret;
+    private Dictionary<int, Transform> artilleries;
+    private Transform? fireMissionRoot;
+    private FireMission? fireMission;
     private Transform? mapSurface;
+
+    /// <summary>炮塔 Transform 只读访问(供 TacticalRadar 等使用)</summary>
+    public Transform? Turret => turret;
 
     public bool TryBind() {
         artilleries = new Dictionary<int, Transform>();
@@ -45,8 +47,8 @@ public class MapTable {
         }
 
         fireMissionRoot = fireMissionObject.transform;
-        FireMission = fireMissionRoot.GetComponent<FireMission>();
-        return FireMission != null;
+        fireMission = fireMissionRoot.GetComponent<FireMission>();
+        return fireMission != null;
     }
 
     public ArtilleryTask? GetMarkTarget(int index) {

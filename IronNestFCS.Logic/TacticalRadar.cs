@@ -287,7 +287,7 @@ public class TacticalRadar
     private float CalcAngle(Vector3 worldPos)
     {
         var mapSurface = GameObject.Find("Draggable Surface")?.transform;
-        var turret = fcs.MapTable.turret;
+        var turret = fcs.MapTable.Turret;
         if (mapSurface == null || turret == null) return 0f;
         var localPos = mapSurface.InverseTransformPoint(worldPos);
         var target = localPos - turret.localPosition;
@@ -299,7 +299,7 @@ public class TacticalRadar
     private float CalcDistance(Vector3 worldPos)
     {
         var mapSurface = GameObject.Find("Draggable Surface")?.transform;
-        var turret = fcs.MapTable.turret;
+        var turret = fcs.MapTable.Turret;
         if (mapSurface == null || turret == null) return 0f;
         var localPos = mapSurface.InverseTransformPoint(worldPos);
         var target = localPos - turret.localPosition;
