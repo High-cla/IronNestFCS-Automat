@@ -18,6 +18,28 @@
 - 单一开关 `autoMode`(由 `sweepActive` 语义升级而来)管全部自动行为。
 - 手柄仅映射一个键:全自动开关。不做 T1-T4/弹种/装药的手柄映射。
 - 不采用:双开关拆分、TacticalRadar 改造(不需要——FcsModule 挡住 Scan 调用即可)、摇杆模拟鼠标。
+- **前置(Phase 0)**:先合入上游 svr2kos2 的正式版适配(新弹种),再实现切换逻辑。上游只做手动模式,全自动是本分支独有特性。
+
+## Phase 0:上游正式版适配合并(前置)
+
+上游 8-06/8-07 提交(我们 fork 点 9543162 之后 9 commits),只合与本项目 Logic 相关的正式版适配:
+
+| 文件 | 上游改动 | 本地状态 | 合并方式 |
+|---|---|---|---|
+| `GunSystem.cs` | BulletType 枚举扩为 20 种(AP=1 不变,HE 3→10);null 防护 | 本地未改 | 直接替换 |
+| `PurchaseDeck.cs` | 硬编码 5 卡 → `Dictionary<BulletType, Transform>` + `Enum.TryParse`(卡 ID 去 "Shell" 后缀自动匹配新弹种) | 本地未改 | 直接替换 |
+| `TriggerConsole.cs` | null 防护 | 本地未改 | 直接替换 |
+| `MapTable.cs` | 字段私有化(`turret`→private) | 本地加了 SetMarkerWorldPos/ResetMarker | 手工合:私有化 + 新增 `Turret` 属性供 TacticalRadar |
+| `TacticalRadar.cs` | 上游无此文件 | 本地独有 | 2 处 `fcs.MapTable.turret` → `fcs.MapTable.Turret` |
+| `FSC.cs` | +ReplenishPowderLoop(驻留协程:装药<6 每 5s 补一包,deskLock 保护)、ExposeAllEntities 改 VisualRoot | 本地大改(Entities 坐标重构) | 手工合:加 using/常量/TryBind 启动/方法 |
+| `FcsSceneInteractor.cs` | 20 弹种按钮布局重排(x=0.8/y=-0.65 起 + y 阶梯),AutoFire/MaxCharge 挪入 TargetButtons | 本地有 3D 按钮 + URP 修复 | 手工合:保留本地增强,应用上游布局 |
+
+不采纳:`csproj` GameDir(本地路径不同)、CustomRecords 改动(独立模块,与弹种无关,后续需要再合)。
+
+兼容性确认(已核对):
+- BulletType 按名字引用(AP/HE/HCHE),枚举重编号无编译影响;免疫字符串 `ToString()` 匹配不变
+- `BuyPowders()`/`BuyShell(type, side)` 签名不变,FSC 调用兼容
+- TacticalDecider 自动选弹目前只覆盖 AP/HE/HCHE——新弹种策略扩展不在本次范围(ponytail: 不做,后续有需要再说)
 
 ## 设计
 
