@@ -6,6 +6,7 @@ using Il2Cpp;
 using IronNestFCS.Logic.FCS;
 using MelonLoader;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
 
@@ -28,6 +29,10 @@ public enum LeftRight {
 public class FSC
 {
     private const string HarmonyId = "com.svr2kos2.ironnestfcs.logic";
+
+    // 驻留装药补给:装药低于阈值时每 5s 补一包(deskLock 保护),与任务内购买互补。
+    private const float PowderCheckInterval = 5f;
+    private const int PowderReplenishThreshold = 6;
 
     private HarmonyInstance? _harmony;
     
@@ -94,6 +99,10 @@ public class FSC
                   && Turret.TryBind()
                   && TriggerConsole.TryBind();
         MelonLogger.Msg("[FCS] Initialize: " + (IsBound ? "success" : "failed"));
+        if (IsBound) {
+            // 驻留装药补给协程:保证装药充足,减少任务内等待购买。
+            _runningCoroutines.Add(MelonCoroutines.Start(ReplenishPowderLoop()));
+        }
         // 探针已完成使命，需要时取消注释：
         // if (IsBound) RunEnemyProbe();
 
@@ -365,6 +374,28 @@ public class FSC
         try { _harmony?.UnpatchSelf(); }
         catch (Exception ex) { MelonLogger.Error($"[FCS] UnpatchSelf failed: {ex}"); }
         _harmony = null;
+    }
+
+    /// <summary>
+    /// 驻留协程:每 5s 检查两管炮装药,低于阈值补一包。用 _deskLock 保护(采购台是共享硬件,
+    /// 与任务内采购互斥)。TryBind 成功后登记进 _runningCoroutines,Dispose 时随协程一起 Stop。
+    /// </summary>
+    private IEnumerator ReplenishPowderLoop() {
+        while (true) {
+            yield return new WaitForSeconds(PowderCheckInterval);
+            // 取两管炮装药的最小值:任一管低于阈值就补
+            var charges = Math.Min(LeftGun.RemainingCharges(), RightGun.RemainingCharges());
+            if (charges >= PowderReplenishThreshold) continue;
+            MelonLogger.Msg(
+                $"[FCS] AutoReplenish: powder charges {charges} < {PowderReplenishThreshold}, buying one");
+            yield return _deskLock.Acquire();
+            try {
+                yield return _purchaseDeck.BuyPowders();
+            }
+            finally {
+                _deskLock.Release();
+            }
+        }
     }
 
     public IEnumerator ExposeAllEntities() {
