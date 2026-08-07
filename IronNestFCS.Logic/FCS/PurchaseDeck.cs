@@ -2,45 +2,29 @@
 using MelonLoader;
 using UnityEngine;
 using System.Collections;
+using static System.Enum;
 
 namespace IronNestFCS.Logic.FCS;
 
 public class PurchaseDeck {
-    private Transform? _heCard;
-    private Transform? _apCard;
-    private Transform? _starCard;
-    private Transform? _smkCard;
-    private Transform? _hcheCard;
+    private Dictionary<BulletType, Transform> bulletCards = new();
     private Transform? _powderCard;
     private LookAtTarget? _buyButton;
-    
-    
+
+
     public bool TryBind() {
         var requisitionConsole = GameObject.Find("Requisition Console").transform;
         var cards = requisitionConsole.GetComponentsInChildren<PunchcardRuntime>();
         foreach (var card in cards) {
             MelonLogger.Msg($"[FCS] PurchaseDeck: Found card {card.CurrentDefinition.ID}");
-            switch (card.CurrentDefinition.ID) {
-                case "HEShell":
-                    _heCard = card.transform;
-                    break;
-                case "APShell":
-                    _apCard = card.transform;
-                    break;
-                case "STARShell":
-                    _starCard = card.transform;
-                    break;
-                case "SMOKEShell":
-                    _smkCard = card.transform;
-                    break;
-                case "HCHEShell":
-                    _hcheCard = card.transform;
-                    break;
-                case "PowderCharges":
-                    _powderCard = card.transform;
-                    break;
-                default:
-                    break;
+            if (TryParse(
+                    card.CurrentDefinition.ID.Replace("SMOKE", "SMK").Replace("Shell", ""),
+                    out BulletType type
+                )) {
+                bulletCards[type] = card.transform;
+            }
+            else if (card.CurrentDefinition.ID == "PowderCharges") {
+                _powderCard = card.transform;
             }
         }
         
@@ -55,14 +39,7 @@ public class PurchaseDeck {
     }
 
     public IEnumerator BuyShell(BulletType type, LeftRight leftRight) {
-        var card = type switch {
-            BulletType.AP => _apCard,
-            BulletType.HE => _heCard,
-            BulletType.STAR => _starCard,
-            BulletType.SMK => _smkCard,
-            BulletType.HCHE => _hcheCard,
-            _ => null
-        };
+        var card = bulletCards.GetValueOrDefault(type);
         if (card == null) {
             MelonLogger.Error($"[FCS] BuyShell: Can't find {type} card");
             yield break;
