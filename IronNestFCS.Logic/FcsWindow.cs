@@ -54,13 +54,10 @@ public class FcsWindow
         GUI.color = oldColor;
         y += lineH;
 
-        if (AutoSweepEnabled)
-        {
-            GUI.color = ClrSweep;
-            GUI.Label(new Rect(x, y, w, h), "[Sweep ON]");
-            GUI.color = oldColor;
-            y += lineH;
-        }
+        GUI.color = AutoSweepEnabled ? ClrSweep : ClrLabel;
+        GUI.Label(new Rect(x, y, w, h), AutoSweepEnabled ? "[AUTO]" : "[MANUAL]");
+        GUI.color = oldColor;
+        y += lineH;
 
         DrawDivider(x, y, w);
         y += 4f;
