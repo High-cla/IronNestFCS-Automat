@@ -102,7 +102,9 @@ public class GunSystem {
         }
         elevationLever.SetSliderValue(elevation);
         yield return new WaitForSeconds(0.1f);
-        while (!Mathf.Approximately(gunController.CurrentElevation, elevation)) {
+        // 原子化兜底:仰角杆 60s 内不到位即放弃继续(玩家手动抢杆等异常下不再永久等待)。
+        float deadline = Time.time + 60f;
+        while (!Mathf.Approximately(gunController.CurrentElevation, elevation) && Time.time < deadline) {
             elevationLever.SetSliderValue(elevation);
             yield return new WaitForSeconds(1f);
         }
@@ -187,17 +189,27 @@ public class GunSystem {
     public IEnumerator WaitBackToIdle() {
         // ponytail: 13s 不是魔数，是炮管退膛→抛壳→复进→闭锁的机械循环时间。
         // 改短会导致下一发装填时 breech 未复位，装填卡住。
-        while (gunController != null && gunController.elevationChangeVelocity != 0) {
+        // 原子化兜底:回位杆 60s 内未停即放弃等待(玩家手动抢杆等异常下不再永久等待)。
+        float deadline = Time.time + 60f;
+        while (gunController != null && gunController.elevationChangeVelocity != 0 && Time.time < deadline) {
             yield return new WaitForSeconds(0.1f);
         }
         yield return new WaitForSeconds(13);
     }
 
     public IEnumerator WaitFire() {
-        while (gunController != null && !gunController.pendingReload) {
+        // 原子化兜底:90s 内未击发(如 AutoFire 关闭、手动击发迟迟不来)即超时,
+        // 调用方检查 LastWaitFireTimedOut 放弃任务,避免任务永久卡死占用炮管。
+        LastWaitFireTimedOut = false;
+        float deadline = Time.time + 90f;
+        while (gunController != null && !gunController.pendingReload && Time.time < deadline) {
             yield return new WaitForSeconds(0.1f);
         }
+        LastWaitFireTimedOut = Time.time >= deadline;
     }
+
+    /// <summary>最近一次 WaitFire 是否超时(调用方据此放弃任务)。</summary>
+    public bool LastWaitFireTimedOut { get; private set; }
     
     public int RemainingCharges() {
         return (int)remainingCharges.CurrentNumber;

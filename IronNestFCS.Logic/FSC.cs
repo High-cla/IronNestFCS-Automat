@@ -596,10 +596,16 @@ public class FSC
             // 此处不再现抢炮塔——炮塔早已由后台预约持有。只等它转到位（通常已就绪，瞬间通过），
             // 然后确认+击发。炮塔锁一直由本任务持有，直到击发完成才归还。
             task.progress = Progress.WaitingForFire;
-            // ponytail: 炮塔按固定角速度旋转，必然到达，无需超时。
-            // 超时 = 制造失败 = OnGunIdle 重新派任务 = 炮塔还在转又被抢 = 死循环。
-            while (!turret.Ready) {
+            // 原子化兜底:等炮塔就位最多 120s(炮塔锁被另一任务持有/玩家手动转动时可能等不到),
+            // 超时放弃任务走 finally 释放锁与槽位,避免双任务互相持锁死锁。
+            float readyDeadline = Time.time + 120f;
+            while (!turret.Ready && Time.time < readyDeadline) {
                 yield return null;
+            }
+            if (!turret.Ready) {
+                task.progress = Progress.Failed;
+                MelonLogger.Error($"[FCS] {leftRight} 炮管:等待炮塔就位超时(120s),放弃任务");
+                yield break;
             }
             try {
                 yield return TriggerConsole.ConfirmTask();
