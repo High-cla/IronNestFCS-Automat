@@ -220,20 +220,13 @@ public class FcsSceneInteractor {
         return go;
     }
     
-    public static IEnumerator WaitAndClick(LookAtTarget? button, float timeout = 30f) {
+    public static IEnumerator WaitAndClick(LookAtTarget? button) {
         if (button == null) {
             MelonLogger.Error("[FCS] WaitAndClick: button is null");
             yield break;
         }
-        float deadline = Time.realtimeSinceStartup + timeout;
-        while ((button.isActive == false || button.nextAllowedClickTime > Time.realtimeSinceStartup)
-               && Time.realtimeSinceStartup < deadline) {
+        while (button.isActive == false || button.nextAllowedClickTime > Time.realtimeSinceStartup) {
             yield return new WaitForSeconds(0.1f);
-        }
-        if (button.isActive == false || button.nextAllowedClickTime > Time.realtimeSinceStartup) {
-            // 超时不中断流程:继续走,最终由击发/炮塔等待的超时兜底让任务失败释放槽位。
-            MelonLogger.Error($"[FCS] WaitAndClick timeout: '{button.name}' not ready within {timeout}s");
-            yield break;
         }
         yield return new WaitForSeconds(0.1f);
         button.OnClickDown();

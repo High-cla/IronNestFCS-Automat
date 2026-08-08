@@ -157,6 +157,10 @@ public class FcsModule : IFcsModule
         if (!autoMode)
         {
             fcs.ClearPendingTasks();   // 手动接管:清掉自动入队的队列
+            // 原子化:已在炮管上装填的任务必须发射出去——标记强制自动击发,
+            // 否则任务卡在等击发/等炮塔锁,手动任务永远派不进队列。
+            if (fcs.LeftTask != null) fcs.LeftTask.forceFire = true;
+            if (fcs.RightTask != null) fcs.RightTask.forceFire = true;
             MelonLogger.Msg("[FCS] 手动模式:雷达休眠,手动标点 T1-T4 接管");
         }
         else

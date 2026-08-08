@@ -596,16 +596,11 @@ public class FSC
             // 此处不再现抢炮塔——炮塔早已由后台预约持有。只等它转到位（通常已就绪，瞬间通过），
             // 然后确认+击发。炮塔锁一直由本任务持有，直到击发完成才归还。
             task.progress = Progress.WaitingForFire;
-            // 原子化兜底:等炮塔就位最多 120s(炮塔锁被另一任务持有/玩家手动转动时可能等不到),
-            // 超时放弃任务走 finally 释放锁与槽位,避免双任务互相持锁死锁。
-            float readyDeadline = Time.time + 120f;
-            while (!turret.Ready && Time.time < readyDeadline) {
+            // 原子化:任务从开始装填起必须走完击发。炮塔锁串行——本任务的
+            // ReserveTurretAndRotate 后台协程最终会拿到锁并置 Ready;若中途切换
+            // 到手动模式,forceFire 保证已装填的任务自动发射,锁随之释放,后续任务流转。
+            while (!turret.Ready) {
                 yield return null;
-            }
-            if (!turret.Ready) {
-                task.progress = Progress.Failed;
-                MelonLogger.Error($"[FCS] {leftRight} 炮管:等待炮塔就位超时(120s),放弃任务");
-                yield break;
             }
             try {
                 yield return TriggerConsole.ConfirmTask();
@@ -614,7 +609,7 @@ public class FSC
                 yield return TriggerConsole.ConfirmElevation();
                 yield return TriggerConsole.ReadyToFire();
                 yield return TriggerConsole.Arm(leftRight);
-                if (_sceneInteractor.AutoFire) {
+                if (_sceneInteractor.AutoFire || task.forceFire) {
                     TriggerConsole.Fire();
                 }
                 yield return gunSys.WaitFire();
