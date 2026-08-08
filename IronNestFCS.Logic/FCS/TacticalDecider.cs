@@ -20,6 +20,9 @@ public static class TacticalDecider
         public int Priority;     // 6:FDC, 5:火炮, 4:弹药库/高价值, 3:装甲/工事, 2:普通, 1:其他
         public bool IsArmored;
         public bool IsUnderground;
+        public bool IsMoving;
+        /// <summary>目标速度向量(桌面单位/秒 ×3.8164 = km/s),移动目标预测用</summary>
+        public Vector3 Velocity;
         public Vector3 WorldPos;
         public int ChildIndex;   // deprecated, use EntityId
         /// <summary>目标免疫的弹种 ID 集合（如 {"HE"}），用于自动弹种选择</summary>

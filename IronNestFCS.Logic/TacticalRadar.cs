@@ -30,6 +30,10 @@ public class TacticalRadar
     private readonly FSC fcs;
     private readonly HashSet<string> sweptIds = new();
 
+    // 移动侦测:上次扫描的实体位置快照(EntityId → 位置/时间),相邻扫描差分估速。
+    // 正式版出现移动目标(匀速直线为主),先收集真实速度数据再定预测策略。
+    private readonly Dictionary<string, (Vector3 pos, float time)> moveSnapshots = new();
+
     // 缓存的 FireMission 引用（按 F9 重载后失效，Scan 内自动刷新）
     private FireMission? _cachedFm;
     private PropertyInfo? _entitiesProp;
@@ -175,6 +179,24 @@ public class TacticalRadar
                 continue;
             }
 
+            // 移动侦测:与上次扫描位置差分 → 速度向量(桌面单位/秒 ×3.8164 = km/s)
+            bool isMoving = false;
+            Vector3 velocity = Vector3.zero;
+            if (moveSnapshots.TryGetValue(key, out var snap) && Time.time - snap.time > 1f)
+            {
+                float dt = Time.time - snap.time;
+                Vector3 disp = worldPos - snap.pos;
+                velocity = disp / dt;
+                if (velocity.magnitude * 3.8164f > 0.001f)  // 约 1 m/s 阈值
+                {
+                    isMoving = true;
+                    MelonLogger.Msg($"[Radar] MOVING: '{name}' ({key}) " +
+                                    $"v={velocity.magnitude * 3.8164f:F3}km/s 位移={disp.magnitude * 3.8164f:F3}km/{dt:F1}s " +
+                                    $"from {snap.pos} to {worldPos}");
+                }
+            }
+            moveSnapshots[key] = (worldPos, Time.time);
+
             targets.Add(new TacticalDecider.TargetInfo
             {
                 Name = name,
@@ -185,6 +207,8 @@ public class TacticalRadar
                 IsArmored = isArmored,
                 IsUnderground = isUnderground,
                 WorldPos = worldPos,
+                IsMoving = isMoving,
+                Velocity = velocity,
                 ChildIndex = 0, // 不再使用，保留兼容
                 ImmuneShells = immune
             });
