@@ -59,17 +59,19 @@ public class FcsModule : IFcsModule
 
             var t = PickTarget(busyIds);
             if (t == null) continue;
-            busyIds.Add(t.EntityId);
+            var ti = t.Value;  // TargetInfo 是 struct,Nullable 解包
+
+            busyIds.Add(ti.EntityId);
 
             var task = new ArtilleryTask
             {
                 targetId = nextTargetId++,
-                entityId = t.EntityId,
-                angel = t.Angle,
-                distance = t.Distance,
-                position = t.WorldPos,
-                bulletType = TacticalDecider.ChooseShellType(t),
-                useMaxCharge = TacticalDecider.ShouldUseMaxCharge(t)
+                entityId = ti.EntityId,
+                angel = ti.Angle,
+                distance = ti.Distance,
+                position = ti.WorldPos,
+                bulletType = TacticalDecider.ChooseShellType(ti),
+                useMaxCharge = TacticalDecider.ShouldUseMaxCharge(ti)
             };
             fcs.EnqueueTask(task);
         }
