@@ -492,6 +492,7 @@ public class FSC
         _runningCoroutines.Add(MelonCoroutines.Start(ReserveTurretAndRotate(task, turret)));
 
         var powderCount = task.useMaxCharge ? 6 : _sceneInteractor.maxCharge ? 6 : BallisticCalculator.MinimumCharge(task.distance);
+        MelonLogger.Msg($"[FCS] {leftRight} 装药决策: task.max={task.useMaxCharge} btn.max={_sceneInteractor.maxCharge} dist={task.distance:F2} → {powderCount}包");
 
         // ===== 临界区 1：解算 =====
         // 弹道计算器 / 确认台 / 采购台都是全局唯一硬件，必须串行。算完仰角即放，
