@@ -14,13 +14,13 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 
 ### 这是什么
 
-为《铁巢：重炮模拟器》编写的 MelonLoader Mod。本仓库是 svr2kos2 原版 FCS 的分支：开启后 Mod 持续扫描全图敌情，自动完成弹道解算、弹种选择、采购装填、瞄准击发。
+为《铁巢：重炮模拟器》编写的 MelonLoader Mod。本仓库是 svr2kos2 原版 FCS 的分支：开启后 Mod 持续扫描全图敌情，自动完成弹道解算、弹种选择、采购装填、瞄准击发。**支持正式版全部 20 种弹种（采购卡自动识别）**。
 
 ### 核心功能
 
 #### Numpad 0 全自动扫荡（核心玩法）
 - 按 **Numpad 0** 启动/停止自动扫荡，开启后无需任何手动操作（可在桌上面板上开启 Auto Fire 自动完成最后的击发动作）：扫描 → 决策 → 打击 → 补弹 → 再扫描，循环不止
-- **无小键盘的键盘？按 Ctrl+0** 效果相同（手动打击 Numpad 1-4 也备有 Ctrl+1-4）
+- **无小键盘的键盘？按 Ctrl+0** 效果相同（手动打击 Numpad 1-4 也备有 Ctrl+1-4）；**手柄玩家按 `Select` 切换**
 - 雷达直接读取游戏 `FireMission.Entities` 目标注册表
 - 双炮并行调度：任务自动派给空闲炮管，退膛完成自动接力
 - 缺弹自动采购
@@ -34,7 +34,8 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 
 #### 手动模式
 - Numpad 1-4（或 Ctrl+1-4）对标记目标 T1~T4 手动下达打击任务
-- 面板切换弹种（AP / HCHE / HE / STAR / SMK）、`Auto Fire` 自动击发、`Max Charge` 满装药（此项在全自动模式下失效）
+- 面板切换弹种（正式版 20 种）、`Auto Fire` 自动击发、`Max Charge` 满装药（全自动/手动均生效）
+- **`Numpad 0`（或手柄 `Select`）一键切换全自动/手动**：全自动 = 雷达接管；手动 = 雷达完全休眠，切换时已在装填的任务自动打完（原子化）
 
 ### 开发体验
 - **F9 热重载**：修改 `IronNestFCS.Logic` 代码 → `dotnet build` → 切回游戏按 F9，无需重启
@@ -86,8 +87,8 @@ dotnet build IronNestFCS.sln -c Release
 
 1. 启动已安装 MelonLoader 与本 Mod 的游戏。若面板提示 `Dial 未绑定`，按 **F9** 重新绑定
 2. 进入包含炮塔与地图桌的关卡，在控制台旁的按钮上选择弹种（默认 HE），按需开启 `Auto Fire` 和 `Max Charge`
-3. 按 **Numpad 0**（或 **Ctrl+0**）开启自动扫荡，Mod 自动完成解算 → 采购 → 装填 → 瞄准 → 确认 → 击发
-4. 也可手动拖动地图目标标记（T1~T4）到目标位置，按 **Numpad 1-4** 下达任务
+3. 按 **Numpad 0**（或 **Ctrl+0** / 手柄 **Select**）切换全自动/手动模式。全自动下 Mod 自动完成解算 → 采购 → 装填 → 瞄准 → 确认 → 击发
+4. 手动模式下拖动地图目标标记（T1~T4）到目标位置，按 **Numpad 1-4** 下达任务
 5. 左上角面板实时显示两管炮任务进度与队列
 
 **热重载开发**：修改 `IronNestFCS.Logic` 代码后重建项目，切回游戏按 F9 即可加载新逻辑。注意：不要在 Logic 中注册新的 IL2CPP 类型，协程必须登记以便卸载时停止。
@@ -116,7 +117,7 @@ A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork o
 
 #### Numpad 0 — Full-auto Sweep (the main event)
 - Press **Numpad 0** to start/stop the sweep loop. Once active, zero manual input: scan → decide → strike → resupply → scan again, forever
-- **No numpad? Press Ctrl+0** instead (manual strikes also have Ctrl+1-4 fallbacks for Numpad 1-4)
+- **No numpad? Press Ctrl+0** instead (manual strikes also have Ctrl+1-4 fallbacks for Numpad 1-4); **gamepad users: press `Select`** to toggle
 - The radar reads the game's `FireMission.Entities` target registry directly
 - Dual-barrel scheduler: tasks are auto-assigned to idle guns; the next task starts the moment a barrel finishes cycling
 - Auto-purchases shells when the magazine runs low
@@ -129,7 +130,8 @@ A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork o
 
 #### Manual Mode
 - Numpad 1-4 (or Ctrl+1-4) to manually dispatch strikes against markers T1~T4
-- Switch shell types (AP / HCHE / HE / STAR / SMK), toggle `Auto Fire`, and `Max Charge` from the console buttons
+- Switch shell types (all 20 full-release types), toggle `Auto Fire`, and `Max Charge` from the console buttons
+- **`Numpad 0` (or gamepad `Select`) toggles auto/manual mode**: auto = radar takes over; manual = radar fully dormant, tasks already loading finish atomically
 
 ### Developer Experience
 - **F9 hot reload**: edit `IronNestFCS.Logic` → `dotnet build` → press F9 in-game. No restart needed
@@ -181,8 +183,8 @@ Output:
 
 1. Launch the game with MelonLoader + this mod installed. If the panel says `Dial 未绑定` (not bound), press **F9** to rebind
 2. Enter a scene with a turret and map table. Pick a shell type at the console buttons (default HE), toggle `Auto Fire` / `Max Charge` as desired
-3. Press **Numpad 0** (or **Ctrl+0**) to start the auto sweep. The mod auto-completes: solve → purchase → load → aim → confirm → fire
-4. Alternatively, drag map markers (T1~T4) onto targets and press **Numpad 1-4** to dispatch manually
+3. Press **Numpad 0** (or **Ctrl+0** / gamepad **Select**) to toggle auto/manual mode. In auto, the mod auto-completes: solve → purchase → load → aim → confirm → fire
+4. In manual mode, drag map markers (T1~T4) onto targets and press **Numpad 1-4** to dispatch
 5. The top-left panel shows live progress for both guns and the queue
 
 **Dev hot reload**: edit `IronNestFCS.Logic`, rebuild, press F9 in-game. Don't register new IL2CPP types in Logic, and register coroutines so they stop on unload.
