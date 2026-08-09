@@ -51,9 +51,15 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 | `IronNestFCS.Abstractions` | **契约** | 仅含 `IFcsModule` 接口，唯一安全跨 ALC 边界的类型 |
 | `IronNestFCS.Logic` | **火控逻辑** | 所有火控代码：弹道解算、任务调度、炮塔操控、战术决策、UI。装入可回收 ALC，F9 卸载重载 |
 
-### 构建与安装
+### 安装（玩家）
 
-前置条件：.NET 6 SDK、游戏本体 + [MelonLoader](https://melonwiki.xyz/)（IL2CPP）。
+1. **安装 MelonLoader**：下载 [MelonLoader.Installer.exe](https://melonwiki.xyz/)，选择游戏 exe 安装（IL2CPP 版）。游戏根目录会出现 `MelonLoader/` 文件夹
+2. **解压 Mod**：从 [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) 下载 `IronNestFCS_vX.X.X.zip`，解压到游戏根目录（如 `F:\SteamLibrary\steamapps\common\Iron Nest Heavy Turret Simulator`），三个 dll 自动归位
+3. **启动游戏**：左上角出现 IronNest FCS 面板即安装成功。若面板提示 `Dial 未绑定`，按 **F9** 重新绑定
+
+### 构建（开发者）
+
+前置条件：.NET 6 SDK、游戏本体 + MelonLoader（作为编译引用）。
 
 将两个 `.csproj` 中的 `GameDir` 改为你的游戏安装路径：
 
@@ -61,7 +67,7 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 - `IronNestFCS.Logic/IronNestFCS.Logic.csproj`
 
 ```xml
-<GameDir>你的路径\IRON NEST Heavy Turret Simulator Demo</GameDir>
+<GameDir>你的路径\IRON NEST Heavy Turret Simulator</GameDir>
 ```
 
 构建：
@@ -79,9 +85,6 @@ dotnet build IronNestFCS.sln -c Release
 | `IronNestFCS.Abstractions.dll` | `UserLibs/` | 契约，宿主与逻辑共用 |
 
 > `IronNestFCS.Logic.csproj` 的 `OutputPath` 已指向 `$(GameDir)\UserData\IronNestFCS\`，构建即就位，改代码后进游戏按 F9 即生效。
-
-**从 Release 下载**（推荐）：解压 `IronNestFCS_vX.X.X.zip` 到游戏根目录，三个 dll 自动归位。
-**手动安装**：将三个 dll 放入对应目录。
 
 ### 使用
 
@@ -147,9 +150,15 @@ Three projects, host/logic split to serve hot reload:
 | `IronNestFCS.Abstractions` | **Contract** | Contains only the `IFcsModule` interface — the only type safe across ALC boundaries |
 | `IronNestFCS.Logic` | **FCS logic** | All the fire control code: ballistics, scheduling, turret control, tactics, UI. Loaded in a collectible ALC for F9 reload |
 
-### Build & Install
+### Install (Players)
 
-Prerequisites: .NET 6 SDK, the game + [MelonLoader](https://melonwiki.xyz/) (IL2CPP).
+1. **Install MelonLoader**: download [MelonLoader.Installer.exe](https://melonwiki.xyz/), point it at the game exe (IL2CPP). A `MelonLoader/` folder appears in the game root
+2. **Extract the mod**: download `IronNestFCS_vX.X.X.zip` from [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) and extract it into the game root (e.g. `F:\SteamLibrary\steamapps\common\Iron Nest Heavy Turret Simulator`); the three dlls land in place
+3. **Launch the game**: the IronNest FCS panel in the top-left corner means success. If it says `Dial 未绑定`, press **F9** to rebind
+
+### Build (Developers)
+
+Prerequisites: .NET 6 SDK, the game + MelonLoader (for compile references).
 
 Change `GameDir` in both `.csproj` files to your game install path:
 
@@ -157,7 +166,7 @@ Change `GameDir` in both `.csproj` files to your game install path:
 - `IronNestFCS.Logic/IronNestFCS.Logic.csproj`
 
 ```xml
-<GameDir>your\path\IRON NEST Heavy Turret Simulator Demo</GameDir>
+<GameDir>your\path\Iron Nest Heavy Turret Simulator</GameDir>
 ```
 
 Build:
@@ -175,9 +184,6 @@ Output:
 | `IronNestFCS.Abstractions.dll` | `UserLibs/` | Contract shared by host and logic |
 
 > `IronNestFCS.Logic.csproj`'s `OutputPath` already points to `$(GameDir)\UserData\IronNestFCS\` — build output lands in place, so F9 picks it up instantly.
-
-**Install from Releases** (recommended): extract `IronNestFCS_vX.X.X.zip` into the game root; all three dlls land in place.
-**Manual install**: place the three dlls into the directories above.
 
 ### Usage
 
