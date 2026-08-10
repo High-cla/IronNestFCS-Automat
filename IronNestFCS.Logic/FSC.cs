@@ -50,6 +50,12 @@ public class FSC
     // 所有读写都在 Unity 主线程（入队来自点击回调，派发/完成来自协程），无并发，无需锁。
     private readonly Queue<ArtilleryTask> _taskQueue = new();
 
+    /// <summary>人机协同注册表: 在飞/排队/炮上目标的统一承包登记(手动+自动共用)</summary>
+    public readonly TargetRegistry Registry = new();
+
+    /// <summary>手动任务目标解析器(FcsModule 创建雷达后注入)</summary>
+    public TacticalRadar? EntityLocator { get; set; }
+
     /// <summary>当前各炮管正在执行的任务；null 表示该炮管空闲。供 UI 显示与调度判断。</summary>
     public ArtilleryTask? LeftTask { get; private set; }
     public ArtilleryTask? RightTask { get; private set; }
@@ -368,7 +374,7 @@ public class FSC
         _taskQueue.Clear();
         LeftTask = null;
         RightTask = null;
-        _firedAt.Clear();
+        Registry.Clear();
 
         _sceneInteractor.ShutDown();
         try { _harmony?.UnpatchSelf(); }
@@ -415,7 +421,13 @@ public class FSC
     /// </summary>
     public void EnqueueTask(ArtilleryTask task) {
         task.progress = Progress.Pending;
+        // 手动任务: 解析标记位置的存活敌目标 → entityId(注册表按目标屏蔽);
+        // 解析失败保持空 → 按位置提交(小半径屏蔽)。
+        if (task.Source == TaskSource.Manual && task.entityId is not { Length: > 0 } && EntityLocator != null)
+            task.entityId = EntityLocator.FindNearestHostileId(task.position, TargetRegistry.ManualResolveMaxDistance) ?? "";
         _taskQueue.Enqueue(task);
+        // 手动任务入队即登记(队列在自动清队列中存活); 自动任务在派发时登记。
+        if (task.Source == TaskSource.Manual) Registry.Commit(task);
         TryDispatch();
     }
 
@@ -440,6 +452,7 @@ public class FSC
             var task = _taskQueue.Dequeue();
             if (slot == LeftRight.Left) LeftTask = task;
             else RightTask = task;
+            Registry.Commit(task);   // 手动任务幂等(入队已登记)
             StartTaskRoutine(slot, task);
         }
     }
@@ -458,17 +471,11 @@ public class FSC
     /// <summary>任一炮管退膛时触发回调（WaitBackToIdle 完成后）。供雷达层刷新队列。</summary>
     public event Action? OnGunIdle;
 
-    // 在飞窗口：目标被任一炮击发后，InFlightWindow 秒内不再次纳入扫荡派发。
-    // 800mm 一发成杀——弹未落地就补一发 = 白烧整条射循环，双管互换互打同理。
-    // 需 ≥ 实际最大飞行时间，按 800mm 实测取 45s；打偏存活的目标靠窗口到期后的重扫再打。
-    private const float InFlightWindow = 45f;
-    private readonly Dictionary<string, float> _firedAt = new();
-    public bool InFlight(string entityId) =>
-        _firedAt.TryGetValue(entityId, out var t) && Time.time - t < InFlightWindow;
-
-    /// <summary>清空待处理队列（不碰正在执行的任务）。</summary>
+    /// <summary>清空队列中雷达自动入队的任务, 保留玩家手动入队的任务。</summary>
     public void ClearPendingTasks() {
+        var kept = _taskQueue.Where(t => t.Source == TaskSource.Manual).ToList();
         _taskQueue.Clear();
+        foreach (var t in kept) _taskQueue.Enqueue(t);
     }
 
     /// <summary>炮管打完一发后释放槽位并尝试拉取队列里的下一个任务。</summary>
@@ -546,6 +553,17 @@ public class FSC
         }
 
         try {
+            // 3b 切割点: 切手动时置 Canceled 的自动任务在此干净放弃——
+            // 还没碰炮膛(未 LoadBullet), 无卡膛风险。复用 viable 分支的 abort 模式。
+            if (task.Canceled) {
+                task.progress = Progress.Canceled;
+                turret.Canceled = true;
+                ReleaseTurretOnce(turret);
+                Registry.Release(task);
+                ReleaseSlot(leftRight);
+                slotReleased = true;
+                yield break;
+            }
             if (!viable) {
                 // 任务不可行：取消炮塔预约并归还（后台若尚未抢到，会在抢到后自行归还），
                 // 并释放炮管槽位让队列里的下一个任务能用这管炮。
@@ -614,7 +632,8 @@ public class FSC
                     TriggerConsole.Fire();
                 }
                 yield return gunSys.WaitFire();
-                _firedAt[task.entityId] = Time.time;
+                task.Fired = true;
+                Registry.MarkFired(task);
             }
             finally {
                 ReleaseTurretOnce(turret);
@@ -629,6 +648,9 @@ public class FSC
             slotReleased = true;
         }
         finally {
+            // 未击发的任务结束时解除登记(击发过的留给击杀确认/窗口到期)。
+            // Canceled/Failed 分支幂等。
+            if (!task.Fired) Registry.Release(task);
             // 防泄漏：协程崩了或 yield break 没走到 ReleaseSlot 时兜底释放
             if (!slotReleased) {
                 if (leftRight == LeftRight.Left) LeftTask = null;

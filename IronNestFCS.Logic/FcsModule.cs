@@ -86,7 +86,7 @@ public class FcsModule : IFcsModule
         foreach (var t in radar.AliveHostiles)
         {
             if (busyIds.Contains(t.EntityId)) continue;
-            if (fcs.InFlight(t.EntityId)) continue;
+            if (fcs.Registry.IsHandled(t.EntityId)) continue;
             return t;
         }
         return null;
