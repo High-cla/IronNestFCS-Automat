@@ -87,7 +87,9 @@ public class TacticalRadar
 
         if (AutoPlaceMarkers)
         {
-            for (int i = 1; i <= 4; i++)
+            // 雷达只占用 T1/T2 两个标记(对应双管各派一发); T3/T4 永远留给玩家——
+            // 玩家在自动模式下也能拖 T3/T4 手动入队(注册表登记后雷达 IsHandled 跳过)。
+            for (int i = 1; i <= 2; i++)
             {
                 if (i <= targets.Count)
                     fcs.MapTable.SetMarkerWorldPos(i, targets[i - 1].WorldPos);
