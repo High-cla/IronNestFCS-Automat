@@ -90,6 +90,13 @@ public class MapTable {
         marker.localPosition = turret.localPosition;
     }
 
+    /// <summary>指定编号标记的世界坐标(手动任务目标解析与位置提交用)</summary>
+    public Vector3 GetMarkerWorldPos(int index)
+    {
+        if (artilleries.TryGetValue(index, out var marker)) return marker.position;
+        return Vector3.zero;
+    }
+
     public List<EntityLocation> GetAllFireMissionEntities() {
         List<EntityLocation> res = new();
         if (fireMissionRoot == null) {
