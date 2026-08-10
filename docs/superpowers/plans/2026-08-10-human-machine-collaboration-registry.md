@@ -35,7 +35,7 @@
 
 | 决策点 | 结论 |
 |---|---|
-| 在飞窗口 | 固定 `FlightWindow = 90s`（覆盖 ≤60s 飞行 + 余量）+ **击杀确认即时释放**（目标 IsAlive=false 即解除，打中后 ≤5s 恢复可拣）+ 飞行时间日志采集（攒 ToF 数据，后续可改距离加权） |
+| 在飞窗口 | 固定 `FlightWindow = 65s`（覆盖 ≤60s 飞行 + 余量）+ **击杀确认即时释放**（目标 IsAlive=false 即解除，打中后 ≤5s 恢复可拣）+ 飞行时间日志采集（攒 ToF 数据，后续可改距离加权） |
 | 手动目标解析 | 点击时**实时查 FireMission.Entities**（不依赖雷达缓存列表——手动模式雷达休眠），标记世界坐标 1km 内最近存活敌目标 → entityId；解析失败退化位置提交（半径 0.3km） |
 | forceFire 范围 | 仅**自动**任务；手动任务在炮上保持待击发（玩家切到手动后自己拉扳机；`WaitFire` 会等待玩家手动击发，已有此语义） |
 | 实现范围 | 3a + 3b 一起做 |
@@ -45,7 +45,7 @@
 | 状态 | 谁持有 | 解除条件 |
 |---|---|---|
 | 手动任务 入队→击发前 | Registry（entityId 解析成功）或位置禁区（解析失败） | 任务结束（Finished/Failed/Canceled） |
-| 击发后 飞行中（手动+自动） | Registry（`MarkFired` 起算 90s） | 击杀确认（下轮 Scan ≤5s）或窗口到期（打偏） |
+| 击发后 飞行中（手动+自动） | Registry（`MarkFired` 起算 65s） | 击杀确认（下轮 Scan ≤5s）或窗口到期（打偏） |
 | 自动任务 派发→击发前 | Registry（TryDispatch 时登记） | 任务结束（未击发） |
 
 **Reconcile 是安全阀**：窗口保守设长无代价——打中就 5s 内解除，只有打偏才等窗口到期。
@@ -76,7 +76,7 @@ public enum TaskSource { Auto, Manual }
 public sealed class TargetRegistry
 {
     /// <summary>击发后在飞窗口: 覆盖至多 ~60s 飞行 + 余量。打中由 Reconcile 提前解除。</summary>
-    public const float FlightWindow = 90f;
+    public const float FlightWindow = 65f;
     /// <summary>手动标记解析半径(km): 标记世界坐标附近该距离内的存活敌目标视为手动开火目标</summary>
     public const float ManualResolveMaxDistance = 1.0f;
     /// <summary>位置提交(解析失败)的屏蔽半径(km)</summary>
@@ -687,7 +687,7 @@ Expected: BUILD SUCCEEDED（GameDir 需指向游戏安装路径）。
 
 - [ ] **Step 6: 场景 E — 打偏恢复**
 
-命中确认日志缺失（目标未死）：窗口 90s 到期后目标重新被拣选。
+命中确认日志缺失（目标未死）：窗口 65s 到期后目标重新被拣选。
 
 - [ ] **Step 7: 场景 F — 热重载回归**
 
