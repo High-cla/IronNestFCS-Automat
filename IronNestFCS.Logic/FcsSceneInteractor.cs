@@ -109,6 +109,8 @@ public class FcsSceneInteractor {
                 }
                 task.targetId = targetId;
                 task.bulletType = selectedBulletType;
+                task.Source = TaskSource.Manual;
+                task.position = fcs.MapTable.GetMarkerWorldPos(targetId);
                 fcs.EnqueueTask(task);
                 SetColor(button, Color.gray);
                 button.GetComponent<Collider>().enabled = false;
@@ -140,6 +142,8 @@ public class FcsSceneInteractor {
         if (task == null) return;
         task.targetId = targetId;
         task.bulletType = selectedBulletType;
+        task.Source = TaskSource.Manual;
+        task.position = fcs.MapTable.GetMarkerWorldPos(targetId);
         fcs.EnqueueTask(task);
     }
 
