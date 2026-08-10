@@ -25,6 +25,7 @@ public class FcsModule : IFcsModule
     {
         window = new FcsWindow(fcs);
         radar = new TacticalRadar(fcs);
+        fcs.EntityLocator = radar;   // 手动任务目标解析
         fcs.OnGunIdle += OnGunIdle;
         bool bound = fcs.TryBind();
         return bound;
@@ -41,27 +42,19 @@ public class FcsModule : IFcsModule
         AdjustAllValves(0f);
         radar.Scan();
 
-        fcs.ClearPendingTasks();
-
-        // 用 EntityId 去重（替代旧的 ChildIndex）
-        var busyIds = new HashSet<string>();
-        if (fcs.LeftTask?.entityId is string l and not "") busyIds.Add(l);
-        if (fcs.RightTask?.entityId is string r and not "") busyIds.Add(r);
+        fcs.ClearPendingTasks();   // 只清自动任务, 手动任务保留
 
         // 逐空闲炮管派发（TryDispatch 按 Left→Right 取队首，入队顺序即分配顺序）。
-        // 在飞窗口约束：任一炮击发过的目标，InFlightWindow 内不再纳入派发——
-        // 800mm 一发成杀，弹未落地就补一发 = 白烧整条射循环。窗口期内两管空等，
-        // 由 Update 的周期重扫在窗口到期后恢复派发（含打偏存活的目标）。
+        // 派发即登记(Registry.Commit 在 TryDispatch), 同帧双管去重由注册表覆盖,
+        // 在飞窗口约束也由注册表统一承担(炮上/排队/在飞/手动提交的目标全部跳过)。
         int nextTargetId = 1;
         foreach (var barrel in new[] { LeftRight.Left, LeftRight.Right })
         {
             if (barrel == LeftRight.Left ? fcs.LeftTask != null : fcs.RightTask != null) continue;
 
-            var t = PickTarget(busyIds);
+            var t = PickTarget();
             if (t == null) continue;
             var ti = t.Value;  // TargetInfo 是 struct,Nullable 解包
-
-            busyIds.Add(ti.EntityId);
 
             var task = new ArtilleryTask
             {
@@ -71,22 +64,23 @@ public class FcsModule : IFcsModule
                 distance = ti.Distance,
                 position = ti.WorldPos,
                 bulletType = TacticalDecider.ChooseShellType(ti),
-                useMaxCharge = TacticalDecider.ShouldUseMaxCharge(ti)
+                useMaxCharge = TacticalDecider.ShouldUseMaxCharge(ti),
+                Source = TaskSource.Auto
             };
             fcs.EnqueueTask(task);
         }
     }
 
     /// <summary>
-    /// 为某炮管挑目标：AliveHostiles 已按优先级排序，取第一个未占用且不在在飞窗口内的。
-    /// 全部可选目标都在飞/被占用 → 返回 null，炮管空等；窗口到期后由周期重扫恢复派发。
+    /// 挑目标: 注册表(炮上/排队/在飞/手动提交)中的目标跳过, 返回最高优先级可选目标。
+    /// 全部可选目标都被承包 → 返回 null，炮管空等；窗口到期后由周期重扫恢复派发。
     /// </summary>
-    private TacticalDecider.TargetInfo? PickTarget(HashSet<string> busyIds)
+    private TacticalDecider.TargetInfo? PickTarget()
     {
         foreach (var t in radar.AliveHostiles)
         {
-            if (busyIds.Contains(t.EntityId)) continue;
             if (fcs.Registry.IsHandled(t.EntityId)) continue;
+            if (fcs.Registry.IsHandledNear(t.WorldPos, 0f)) continue;
             return t;
         }
         return null;
@@ -158,11 +152,9 @@ public class FcsModule : IFcsModule
         nextSweepTime = 0;  // 重设时间窗，防止立即触发的首轮被防重入窗口跳过
         if (!autoMode)
         {
-            fcs.ClearPendingTasks();   // 手动接管:清掉自动入队的队列
-            // 原子化:已在炮管上装填的任务必须发射出去——标记强制自动击发,
-            // 否则任务卡在等击发/等炮塔锁,手动任务永远派不进队列。
-            if (fcs.LeftTask != null) fcs.LeftTask.forceFire = true;
-            if (fcs.RightTask != null) fcs.RightTask.forceFire = true;
+            fcs.ClearPendingTasks();   // 只清自动入队的队列, 手动任务保留
+            CancelOrForceFire(fcs.LeftTask);
+            CancelOrForceFire(fcs.RightTask);
             MelonLogger.Msg("[FCS] 手动模式:雷达休眠,手动标点 T1-T4 接管");
         }
         else
@@ -171,6 +163,18 @@ public class FcsModule : IFcsModule
             MelonLogger.Msg("[FCS] 全自动模式:雷达接管");
         }
         if (window != null) window.AutoSweepEnabled = autoMode;
+    }
+
+    /// <summary>
+    /// 切手动: 自动任务按进度分流——未开始装填(未碰炮膛)的干净取消, 不浪费弹;
+    /// 已进入装填(弹已上膛)的强制击发, 原子化防卡膛。
+    /// 手动任务保持待击发, 由玩家自己拉扳机(WaitFire 等待玩家手动击发)。
+    /// </summary>
+    private static void CancelOrForceFire(ArtilleryTask? task)
+    {
+        if (task == null || task.Source != TaskSource.Auto) return;
+        if (task.progress < Progress.LoadingBullet) task.Canceled = true;
+        else task.forceFire = true;
     }
 
     public void OnGui()

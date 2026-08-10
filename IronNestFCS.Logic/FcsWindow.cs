@@ -108,6 +108,7 @@ public class FcsWindow
             Progress.Failed => ClrFailed,
             Progress.Finished => ClrGreen,
             Progress.Pending => ClrLabel,
+            Progress.Canceled => ClrLabel,
             _ => ClrActive
         };
 
