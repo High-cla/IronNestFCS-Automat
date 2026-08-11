@@ -53,9 +53,15 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 
 ### 安装（玩家）
 
-1. **安装 MelonLoader**：下载 [MelonLoader.Installer.exe](https://melonwiki.xyz/)，选择游戏 exe 安装（IL2CPP 版）。游戏根目录会出现 `MelonLoader/` 文件夹
-2. **解压 Mod**：从 [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) 下载 `IronNestFCS_vX.X.X.zip`，解压到游戏根目录（如 `F:\SteamLibrary\steamapps\common\Iron Nest Heavy Turret Simulator`），三个 dll 自动归位
-3. **启动游戏**：左上角出现 IronNest FCS 面板即安装成功。若面板提示 `Dial 未绑定`，按 **F9** 重新绑定
+新手向，按顺序做，不需要任何技术背景：
+
+1. **确认游戏正常**：先在 Steam 启动一次游戏，能进入关卡再关掉——不要把一个打不开的游戏拿来装 Mod
+2. **安装 MelonLoader**：下载 [MelonLoader.Installer.exe](https://melonwiki.xyz/)（认准文件名带 `Installer` 的那个），运行后在列表里选择 *Iron Nest Heavy Turret Simulator*（找不到就点 Browse 手动选游戏根目录），点 Install。装完游戏根目录会出现 `MelonLoader/` 文件夹
+3. **下载 Mod**：从 [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) 下载最新的 `IronNestFCS_vX.X.X.zip` 并解压，里面是 `Mods/`、`UserData/`、`UserLibs/` 三个文件夹
+4. **放进游戏**：打开游戏根目录（Steam 库 → 右键游戏 → **管理 → 浏览本地文件**），把三个文件夹**整个**拖进去（不是拖里面的文件）；提示"目标文件夹已存在"就选**是 / 合并**
+5. **启动验证**：从 Steam 启动。弹出黑色控制台窗口是正常现象，别关。进入有炮塔和地图桌的关卡，画面**左上角出现 IronNest FCS 面板**即安装成功
+
+> 提示：面板提示 `Dial 未绑定` 时按 **F9** 重新绑定；游戏更新后 Mod 失效，把 zip 再解压覆盖一遍即可。
 
 ### 构建（开发者）
 
@@ -152,9 +158,15 @@ Three projects, host/logic split to serve hot reload:
 
 ### Install (Players)
 
-1. **Install MelonLoader**: download [MelonLoader.Installer.exe](https://melonwiki.xyz/), point it at the game exe (IL2CPP). A `MelonLoader/` folder appears in the game root
-2. **Extract the mod**: download `IronNestFCS_vX.X.X.zip` from [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) and extract it into the game root (e.g. `F:\SteamLibrary\steamapps\common\Iron Nest Heavy Turret Simulator`); the three dlls land in place
-3. **Launch the game**: the IronNest FCS panel in the top-left corner means success. If it says `Dial 未绑定`, press **F9** to rebind
+Beginner-friendly, in order — no technical background needed:
+
+1. **Make sure the game runs**: launch it once from Steam and enter a level, then quit — don't install a mod on a game that doesn't start
+2. **Install MelonLoader**: download [MelonLoader.Installer.exe](https://melonwiki.xyz/) (look for `Installer` in the filename), run it, pick *Iron Nest Heavy Turret Simulator* from the list (or click Browse and select the game folder manually), click Install. A `MelonLoader/` folder appears in the game root
+3. **Download the mod**: grab the latest `IronNestFCS_vX.X.X.zip` from [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) and extract it — you get `Mods/`, `UserData/`, `UserLibs/` folders
+4. **Drop them in**: open the game root (Steam library → right-click the game → **Manage → Browse local files**) and drag the three folders in **whole** (not their contents); pick **Yes / Merge** when asked to overwrite
+5. **Verify**: launch from Steam. A black console window popping up is normal — leave it open. Enter a level with turrets and a map table: the **IronNest FCS panel in the top-left corner** means success
+
+> Tip: if the panel shows `Dial 未绑定`, press **F9** to rebind. If the mod stops working after a game update, re-extract the zip over the game folder.
 
 ### Build (Developers)
 
