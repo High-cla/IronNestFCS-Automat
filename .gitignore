@@ -39,5 +39,6 @@ Desktop.ini
 
 tmp/
 release/
+/Release/
 TEMP LOG.txt
 TEMP-ToF.txt
