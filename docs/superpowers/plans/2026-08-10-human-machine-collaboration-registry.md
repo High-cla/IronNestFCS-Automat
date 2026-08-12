@@ -57,7 +57,7 @@
 **Files:**
 - Create: `IronNestFCS.Logic/FCS/TargetRegistry.cs`
 
-- [ ] **Step 1: 创建文件**
+- [x] **Step 1: 创建文件**
 
 ```csharp
 using MelonLoader;
@@ -190,7 +190,7 @@ public sealed class TargetRegistry
 
 > 注意 `MarkFired` 写法：先 `Find` 两次不优雅，合并为一次（见 Task 4 检查点，实施时修正为单次查找）。
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add IronNestFCS.Logic/FCS/TargetRegistry.cs
@@ -204,7 +204,7 @@ git commit -m "feat: human-machine collaboration target registry (issue #3a)"
 **Files:**
 - Modify: `IronNestFCS.Logic/FCS/ArtilleryTask.cs`
 
-- [ ] **Step 1: 扩展字段（文件末尾 `forceFire` 后）**
+- [x] **Step 1: 扩展字段（文件末尾 `forceFire` 后）**
 
 ```csharp
     /// <summary>任务来源: 雷达自动 or 玩家手动(手动任务不被自动清队列清掉)</summary>
@@ -215,7 +215,7 @@ git commit -m "feat: human-machine collaboration target registry (issue #3a)"
     public bool Fired;
 ```
 
-- [ ] **Step 2: Progress 枚举加 Canceled（`Failed` 之后）**
+- [x] **Step 2: Progress 枚举加 Canceled（`Failed` 之后）**
 
 ```csharp
     Failed,
@@ -224,7 +224,7 @@ git commit -m "feat: human-machine collaboration target registry (issue #3a)"
 
 > 注意：`FcsModule` 的进度分流判断用 `task.progress < Progress.LoadingBullet`，`Canceled` 排在枚举末尾不影响该比较（取消后的任务立即结束）。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add IronNestFCS.Logic/FCS/ArtilleryTask.cs
@@ -238,7 +238,7 @@ git commit -m "feat: task Source/Canceled/Fired + Canceled progress state"
 **Files:**
 - Modify: `IronNestFCS.Logic/FCS/MapTable.cs`
 
-- [ ] **Step 1: `ResetMarker` 后新增**
+- [x] **Step 1: `ResetMarker` 后新增**
 
 ```csharp
     /// <summary>指定编号标记的世界坐标(手动任务目标解析与位置提交用)</summary>
@@ -249,7 +249,7 @@ git commit -m "feat: task Source/Canceled/Fired + Canceled progress state"
     }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add IronNestFCS.Logic/FCS/MapTable.cs
@@ -263,7 +263,7 @@ git commit -m "feat: MapTable.GetMarkerWorldPos accessor"
 **Files:**
 - Modify: `IronNestFCS.Logic/FSC.cs`
 
-- [ ] **Step 1: 字段**
+- [x] **Step 1: 字段**
 
 `_taskQueue` 声明（第 51 行）附近新增：
 
@@ -275,11 +275,11 @@ git commit -m "feat: MapTable.GetMarkerWorldPos accessor"
     public TacticalRadar? EntityLocator { get; set; }
 ```
 
-- [ ] **Step 2: 删除旧在飞窗口**
+- [x] **Step 2: 删除旧在飞窗口**
 
 删除第 461-467 行的 `InFlightWindow` / `_firedAt` / `InFlight()`。
 
-- [ ] **Step 3: EnqueueTask 手动解析 + 入队登记**
+- [x] **Step 3: EnqueueTask 手动解析 + 入队登记**
 
 ```csharp
     public void EnqueueTask(ArtilleryTask task) {
@@ -295,7 +295,7 @@ git commit -m "feat: MapTable.GetMarkerWorldPos accessor"
     }
 ```
 
-- [ ] **Step 4: TryDispatch 派发时登记**
+- [x] **Step 4: TryDispatch 派发时登记**
 
 ```csharp
             var task = _taskQueue.Dequeue();
@@ -305,7 +305,7 @@ git commit -m "feat: MapTable.GetMarkerWorldPos accessor"
             StartTaskRoutine(slot, task);
 ```
 
-- [ ] **Step 5: ClearPendingTasks 只清自动任务**
+- [x] **Step 5: ClearPendingTasks 只清自动任务**
 
 ```csharp
     /// <summary>清空队列中雷达自动入队的任务, 保留玩家手动入队的任务。</summary>
@@ -316,7 +316,7 @@ git commit -m "feat: MapTable.GetMarkerWorldPos accessor"
     }
 ```
 
-- [ ] **Step 6: RunTaskRoutine 取消检查点（desk 锁释放后、viable 判断前）**
+- [x] **Step 6: RunTaskRoutine 取消检查点（desk 锁释放后、viable 判断前）**
 
 ```csharp
         try {
@@ -335,7 +335,7 @@ git commit -m "feat: MapTable.GetMarkerWorldPos accessor"
                 // ... 现有逻辑不变
 ```
 
-- [ ] **Step 7: 击发段替换 `_firedAt` 登记**
+- [x] **Step 7: 击发段替换 `_firedAt` 登记**
 
 `_firedAt[task.entityId] = Time.time;`（第 617 行）替换为：
 
@@ -344,7 +344,7 @@ git commit -m "feat: MapTable.GetMarkerWorldPos accessor"
                 Registry.MarkFired(task);
 ```
 
-- [ ] **Step 8: 外层 finally 释放未击发任务的登记**
+- [x] **Step 8: 外层 finally 释放未击发任务的登记**
 
 外层 finally（第 631 行）开头加：
 
@@ -357,11 +357,11 @@ git commit -m "feat: MapTable.GetMarkerWorldPos accessor"
                 ...
 ```
 
-- [ ] **Step 9: Dispose 清理**
+- [x] **Step 9: Dispose 清理**
 
 `_firedAt.Clear();`（第 371 行）替换为 `Registry.Clear();`，同时 `_firedAt` 引用全部清除。
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add IronNestFCS.Logic/FSC.cs
@@ -375,7 +375,7 @@ git commit -m "feat: wire target registry + 3b cancel checkpoint + keep-manual q
 **Files:**
 - Modify: `IronNestFCS.Logic/TacticalRadar.cs`
 
-- [ ] **Step 1: 提取实体枚举辅助方法**
+- [x] **Step 1: 提取实体枚举辅助方法**
 
 在 `Scan()` 前新增（把 Scan 里 69-98 行的枚举器样板搬入）：
 
@@ -450,7 +450,7 @@ git commit -m "feat: wire target registry + 3b cancel checkpoint + keep-manual q
     }
 ```
 
-- [ ] **Step 2: Scan 改用 ForEachEntity + Reconcile**
+- [x] **Step 2: Scan 改用 ForEachEntity + Reconcile**
 
 Scan 开头的枚举样板（69-98 行）替换为：
 
@@ -476,7 +476,7 @@ Scan 内其余逻辑（SortTargets/日志/标记放置）不动。原实体读�
 
 > 注意：原 Scan 的世界坐标块使用 `locProp.GetValue(me) as EntityLocation` 与 `_coordinateRoot.TransformPoint`，抽取时保持行为一致。
 
-- [ ] **Step 3: 新增 FindNearestHostileId**
+- [x] **Step 3: 新增 FindNearestHostileId**
 
 ```csharp
     /// <summary>
@@ -499,7 +499,7 @@ Scan 内其余逻辑（SortTargets/日志/标记放置）不动。原实体读�
     }
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add IronNestFCS.Logic/TacticalRadar.cs
@@ -513,7 +513,7 @@ git commit -m "feat: entity enumeration refactor + manual target resolution + ki
 **Files:**
 - Modify: `IronNestFCS.Logic/FcsSceneInteractor.cs`
 
-- [ ] **Step 1: 两处手动入队点标记 Source + 世界坐标**
+- [x] **Step 1: 两处手动入队点标记 Source + 世界坐标**
 
 `FireTarget`（第 137-144 行）与 T1-T4 按钮 lambda（第 105-119 行）中，`fcs.EnqueueTask(task)` 前加：
 
@@ -524,7 +524,7 @@ git commit -m "feat: entity enumeration refactor + manual target resolution + ki
 
 > `GetMarkTarget` 返回的 `position` 是旧表格系伪坐标, 覆盖为标记世界坐标, 供目标解析与位置提交使用(显示转换 ConvertPosition 也一并对齐)。
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add IronNestFCS.Logic/FcsSceneInteractor.cs
@@ -538,7 +538,7 @@ git commit -m "feat: tag manual tasks as Manual source + world position"
 **Files:**
 - Modify: `IronNestFCS.Logic/FcsModule.cs`
 
-- [ ] **Step 1: Initialize 注入 EntityLocator**
+- [x] **Step 1: Initialize 注入 EntityLocator**
 
 ```csharp
         window = new FcsWindow(fcs);
@@ -546,7 +546,7 @@ git commit -m "feat: tag manual tasks as Manual source + world position"
         fcs.EntityLocator = radar;   // 手动任务目标解析
 ```
 
-- [ ] **Step 2: OnGunIdle 去 busyIds + 标 Source**
+- [x] **Step 2: OnGunIdle 去 busyIds + 标 Source**
 
 删除 busyIds/HashSet 块（47-49 行）与 `PickTarget(busyIds)` 传参；创建任务加 `Source = TaskSource.Auto`：
 
@@ -577,7 +577,7 @@ git commit -m "feat: tag manual tasks as Manual source + world position"
         }
 ```
 
-- [ ] **Step 3: PickTarget 改用注册表（busyIds 由派发时登记覆盖）**
+- [x] **Step 3: PickTarget 改用注册表（busyIds 由派发时登记覆盖）**
 
 ```csharp
     /// <summary>挑目标: 注册表(炮上/排队/在飞/手动提交)中的目标跳过, 返回最高优先级可选目标。</summary>
@@ -595,7 +595,7 @@ git commit -m "feat: tag manual tasks as Manual source + world position"
 
 > 派发即登记(Registry.Commit 在 TryDispatch), 原 busyIds 的"同帧双炮去重"由注册表天然覆盖。
 
-- [ ] **Step 4: ToggleAutoMode 按进度分流**
+- [x] **Step 4: ToggleAutoMode 按进度分流**
 
 ```csharp
         if (!autoMode)
@@ -623,7 +623,7 @@ git commit -m "feat: tag manual tasks as Manual source + world position"
     }
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add IronNestFCS.Logic/FcsModule.cs
@@ -637,7 +637,7 @@ git commit -m "feat: mode-switch progress-based cancel/forceFire + registry-base
 **Files:**
 - Modify: `IronNestFCS.Logic/FcsWindow.cs`
 
-- [ ] **Step 1: stateColor switch 加分支**
+- [x] **Step 1: stateColor switch 加分支**
 
 ```csharp
         Color stateColor = task.progress switch
@@ -650,7 +650,7 @@ git commit -m "feat: mode-switch progress-based cancel/forceFire + registry-base
         };
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add IronNestFCS.Logic/FcsWindow.cs
@@ -661,7 +661,7 @@ git commit -m "feat: show Canceled task state in status panel"
 
 ## Task 9: 编译验证 + 运行时验证清单（有环境的机器）
 
-- [ ] **Step 1: 全量构建**
+- [x] **Step 1: 全量构建**
 
 ```bash
 dotnet build IronNestFCS.sln -c Release
@@ -669,27 +669,27 @@ dotnet build IronNestFCS.sln -c Release
 
 Expected: BUILD SUCCEEDED（GameDir 需指向游戏安装路径）。
 
-- [ ] **Step 2: 场景 A — 手动开火不被雷达抢（3a 核心）**
+- [x] **Step 2: 场景 A — 手动开火不被雷达抢（3a 核心）**
 
 全自动模式下拖标记对准某敌目标 → 按 Numpad 1 手动开火 → 观察：装填+飞行全期（≥60s）雷达不重复拣该目标（`[Radar]` 日志无该 entityId）；落地击杀后 ≤5s 日志出现 `killed in flight ~Xs (est.)`。
 
-- [ ] **Step 3: 场景 B — 纯自动在飞窗口修复**
+- [x] **Step 3: 场景 B — 纯自动在飞窗口修复**
 
 纯自动模式下单目标：击发后观察全飞行期（旧 45s 窗口外）不重复派发；击杀后恢复可拣。
 
-- [ ] **Step 4: 场景 C — 3b 切割点（切手动）**
+- [x] **Step 4: 场景 C — 3b 切割点（切手动）**
 
 全自动运行中，趁任务在解算阶段按 Numpad 0：面板该任务显示 Canceled、炮位回 Idle、不浪费弹；任务已装填时切换：正常击发不卡膛。
 
-- [ ] **Step 5: 场景 D — 手动队列存活**
+- [x] **Step 5: 场景 D — 手动队列存活**
 
 手动模式 Numpad 1 入队（双炮忙时排队）→ 切自动：队列保留、任务继续执行，雷达围绕手动任务补位。
 
-- [ ] **Step 6: 场景 E — 打偏恢复**
+- [x] **Step 6: 场景 E — 打偏恢复**
 
 命中确认日志缺失（目标未死）：窗口 65s 到期后目标重新被拣选。
 
-- [ ] **Step 7: 场景 F — 热重载回归**
+- [x] **Step 7: 场景 F — 热重载回归**
 
 F9 重载：无 ALC 泄漏、无协程残留、注册表清零。
 
@@ -697,7 +697,7 @@ F9 重载：无 ALC 泄漏、无协程残留、注册表清零。
 
 ## 风险与已知事项
 
-- **未编译**：本机无 .NET 环境（`dotnet` 不存在），计划中代码未经编译验证。执行时注意：Task 1 `MarkFired` 的双次 `Find` 需合并；`FSC.cs` 需确认 `using System.Linq;`（已有）。
+- **验证结果（2026-08-12 收尾）**：Tasks 1–8 已全部提交（`d8fc64b`→`0340d98`）；场景 A–F 已于 2026-08-11 在有编译环境的机器上运行通过。Task 1 `MarkFired` 的双次 `Find` 已合并为单次；`FSC.cs` 的 `using System.Linq;` 已有。
 - **击杀确认时机**：雷达只在自动模式扫描——手动模式下飞行中的炮弹击杀要到切回自动才解除登记（无害：雷达休眠期无冲突）。
 - **手动任务长时间排队**：双炮持续忙碌时手动任务会在队列等待，其登记持续屏蔽雷达（符合"玩家意图优先"）。
 - **重复登记冲突**：同一 entityId 被两个任务同时登记时后者覆盖（可接受，最后登记方承包）。
