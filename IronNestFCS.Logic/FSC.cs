@@ -445,9 +445,14 @@ public class FSC
             task.entityId = EntityLocator.FindNearestHostileId(task.position, TargetRegistry.ManualResolveMaxDistance) ?? "";
         _taskQueue.Enqueue(task);
         // 手动任务入队即登记(队列在自动清队列中存活); 自动任务在派发时登记。
-        if (task.Source == TaskSource.Manual) Registry.Commit(task);
+        if (task.Source == TaskSource.Manual && IsKillContract(task)) Registry.Commit(task);
         TryDispatch();
     }
+
+    /// <summary>击杀契约: 非杀伤弹(STAR 照明)不登记注册表——照明弹的意义是把目标暴露出来打,
+    /// 登记反而触发 65s 在飞窗口屏蔽, 雷达看着刚被照亮的活目标干瞪眼。
+    /// ponytail: 只列 STAR; 其他非杀伤弹(SMOKE 等)出现同样屏蔽再扩展。</summary>
+    private static bool IsKillContract(ArtilleryTask t) => t.bulletType != BulletType.STAR;
 
     /// <summary>插队：任务放到队列最前面，用于高优先级目标</summary>
     public void EnqueueTaskFront(ArtilleryTask task) {
@@ -470,7 +475,7 @@ public class FSC
             var task = _taskQueue.Dequeue();
             if (slot == LeftRight.Left) LeftTask = task;
             else RightTask = task;
-            Registry.Commit(task);   // 手动任务幂等(入队已登记)
+            if (IsKillContract(task)) Registry.Commit(task);   // 手动任务幂等(入队已登记); STAR 不登记
             StartTaskRoutine(slot, task);
         }
     }
@@ -515,67 +520,28 @@ public class FSC
         // 否则热重载后旧 ALC 的它仍被 Unity 驱动 → 崩溃。
         _runningCoroutines.Add(MelonCoroutines.Start(ReserveTurretAndRotate(task, turret)));
 
-        // 统一路径: 装药按预测最远距离定格（覆盖装填+飞行期目标位移）。静态任务 = ChargeFor(当前距离)。
-        var distNowKm = task.distance;
-        var distLeadMaxKm = distNowKm;
-        if (task.IsMoving && TargetLeadSolver.IsMoving(task.AimVel)) {
-            var tof = ToFTable.FlightTime(distNowKm, TargetLeadSolver.ChargeFor(distNowKm));
-            var far = TargetLeadSolver.LeadPoint(task.AimP0, task.AimVel, Time.time - task.AimStartTime + 60f, tof);
-            distLeadMaxKm = Mathf.Max(distNowKm, DistKm(far));
-        }
-        var powderCount = task.useMaxCharge || _sceneInteractor.maxCharge
-            ? 6
-            : Mathf.Min(6, TargetLeadSolver.ChargeFor(
-                distLeadMaxKm + (task.IsMoving ? MovingDistanceMarginKm : 0f)));
-        task.LoadedCharge = powderCount;
-        task.EstimatedToF = ToFTable.FlightTime(task.distance, powderCount);   // 面板倒计时起点
-        MelonLogger.Msg($"[FCS] {leftRight} 装药决策: task.max={task.useMaxCharge} btn.max={_sceneInteractor.maxCharge} dist={task.distance:F2} → {powderCount}包");
-
-        // ===== 临界区 1：采购（弹道解算已移到公式直算, 不在 desk 锁内）=====
+        // ===== 临界区 1：采购炮弹 =====
         // 仰角/方向角由 aim(t) 公式每帧算, 游戏计算器仅作并行装饰同步(见 SyncCalculatorVisual)。
         // desk 锁只保护采购台(全局唯一硬件), 两门炮"抢占"问题随之消失。
         bool viable = true;
         bool slotReleased = false;
         yield return _deskLock.Acquire();
         try {
-            task.progress = Progress.Calculating;
-            // 装药不足则补购。单次采购未必补满（且偶发点击早于卡牌入槽而失败），
-            // 故循环购买直到够本次发射所需，避免"装药不足但非 0"时直接推进、卡住后续装填。
-            // 加购买次数上限兜底：采购始终无效时不至于无限循环（每次约 2.5s）。
-            var powderPurchaseAttempts = 0;
-            while (gunSys.RemainingCharges() < powderCount) {
-                yield return _purchaseDeck.BuyPowders();
-                if (++powderPurchaseAttempts >= 10) {
-                    MelonLogger.Error(
-                        $"[FCS] {leftRight} 炮管：购买装药 {powderPurchaseAttempts} 次后仍不足 " +
-                        $"{powderCount}（当前 {gunSys.RemainingCharges()}），停止补购。");
-                    // 补购失败＝任务不可行，与弹种缺失的处理一致
+            task.progress = Progress.SelectingBullet;
+            // 弹仓里没有目标弹种则采购（采购台也是共享硬件，放在锁内）。
+            if (!gunSys.HaveBulletInCylinder(task.bulletType)) {
+                if (!gunSys.HaveEmptyShellInCylinder()) {
                     task.progress = Progress.Failed;
                     viable = false;
-                    break;
                 }
-            }
-
-            if (viable) {
-                task.progress = Progress.SelectingBullet;
-                // 弹仓里没有目标弹种则采购（采购台也是共享硬件，放在锁内）。
-                if (!gunSys.HaveBulletInCylinder(task.bulletType)) {
-                    if (!gunSys.HaveEmptyShellInCylinder()) {
-                        task.progress = Progress.Failed;
-                        viable = false;
-                    }
-                    else {
-                        yield return _purchaseDeck.BuyShell(task.bulletType, leftRight);
-                    }
+                else {
+                    yield return _purchaseDeck.BuyShell(task.bulletType, leftRight);
                 }
             }
         }
         finally {
             _deskLock.Release();
         }
-
-        // 计算器纯装饰视觉同步: 与装填并行(不进任务关键路径)。desk 锁短持有, 登记以便 Dispose 停掉。
-        _runningCoroutines.Add(MelonCoroutines.Start(SyncCalculatorVisual(task, powderCount)));
 
         try {
             // 3b 切割点: 切手动时置 Canceled 的自动任务在此干净放弃——
@@ -618,7 +584,52 @@ public class FSC
                 }
             }
 
+            // ===== 装药决策（装弹完成后定格）=====
+            // 装弹(转弹仓+推弹)必远超雷达 5s 扫描周期 → 冷启动目标此刻速度必然已建立并被采纳,
+            // 按真实提前量定格装药, 无需猜测余量。静止目标 = ChargeFor(当前距离)。
+            AdoptVelocityIfNeeded(task);
+            var distNowKm = task.distance;
+            var distLeadMaxKm = distNowKm;
+            if (task.IsMoving && TargetLeadSolver.IsMoving(task.AimVel)) {
+                var tof = ToFTable.FlightTime(distNowKm, TargetLeadSolver.ChargeFor(distNowKm));
+                var far = TargetLeadSolver.LeadPoint(task.AimP0, task.AimVel, Time.time - task.AimStartTime + 60f, tof);
+                distLeadMaxKm = Mathf.Max(distNowKm, DistKm(far));
+            }
+            var powderCount = task.useMaxCharge || _sceneInteractor.maxCharge
+                ? 6
+                : Mathf.Min(6, TargetLeadSolver.ChargeFor(
+                    distLeadMaxKm + (task.IsMoving ? MovingDistanceMarginKm : 0f)));
+            task.LoadedCharge = powderCount;
+            task.EstimatedToF = ToFTable.FlightTime(task.distance, powderCount);   // 面板倒计时起点
+            MelonLogger.Msg($"[FCS] {leftRight} 装药决策: task.max={task.useMaxCharge} btn.max={_sceneInteractor.maxCharge} dist={task.distance:F2} → {powderCount}包");
+
+            // 计算器纯装饰视觉同步: 与装填/瞄准并行(不进任务关键路径)。desk 锁短持有, 登记以便 Dispose 停掉。
+            _runningCoroutines.Add(MelonCoroutines.Start(SyncCalculatorVisual(task, powderCount)));
+
+            // ===== 临界区 2：装药采购（定格后不足才买; 弹种装填失败不再浪费装药）=====
             task.progress = Progress.LoadingPowder;
+            yield return _deskLock.Acquire();
+            try {
+                // 单次采购未必补满（偶发点击早于卡牌入槽而失败），循环购买直到够本次发射所需;
+                // 购买次数上限兜底, 采购始终无效时不至于无限循环（每次约 2.5s）。
+                // 补购失败＝任务不可行（finally 兜底释放槽位/炮塔/登记）。
+                var powderPurchaseAttempts = 0;
+                while (gunSys.RemainingCharges() < powderCount) {
+                    yield return _purchaseDeck.BuyPowders();
+                    if (++powderPurchaseAttempts >= 10) {
+                        MelonLogger.Error(
+                            $"[FCS] {leftRight} 炮管：购买装药 {powderPurchaseAttempts} 次后仍不足 " +
+                            $"{powderCount}（当前 {gunSys.RemainingCharges()}），停止补购。");
+                        task.progress = Progress.Failed;
+                        viable = false;
+                        yield break;
+                    }
+                }
+            }
+            finally {
+                _deskLock.Release();
+            }
+
             yield return gunSys.LoadPowder(powderCount);
             task.progress = Progress.WaitLoading;
             var loadTimeout = 0;
@@ -786,6 +797,7 @@ public class FSC
 
     /// <summary>当前 aim 目标值。移动目标从冻结快照外推; 静态回退固定值。返回是否算移动。</summary>
     private bool TryComputeAimTargets(ArtilleryTask task, out float bearing, out float elev) {
+        AdoptVelocityIfNeeded(task);
         bearing = task.angel;
         elev = TargetLeadSolver.Elevation(task.distance, task.LoadedCharge);
         if (!task.IsMoving || !TargetLeadSolver.IsMoving(task.AimVel)) return false;
@@ -796,6 +808,22 @@ public class FSC
         return true;
     }
 
+    /// <summary>
+    /// 冷启动快照补充(一次性): 任务创建时目标速度未建立(刚被照亮/刚出现), 装填期从雷达
+    /// 最新扫描采纳位置+速度, 重新冻结快照(时间=采纳时刻)。之后仍按冻结公式外推, 不连续查雷达。
+    /// 静止目标采纳后 IsMoving=false, 退化为静态(位置也顺带刷新)。
+    /// </summary>
+    private void AdoptVelocityIfNeeded(ArtilleryTask task) {
+        if (!task.VelocityUnknown || EntityLocator == null) return;
+        if (!EntityLocator.TryGetMotion(task.entityId, out var pos, out var vel)) return;
+        task.AimP0 = pos;
+        task.AimVel = vel;
+        task.AimStartTime = Time.time;
+        task.VelocityUnknown = false;
+        task.IsMoving = TargetLeadSolver.IsMoving(vel);
+        MelonLogger.Msg($"[FCS] 已采纳 {task.entityId} 速度 {vel.magnitude * 3.8164f:F3}km/s, 快照重置");
+    }
+
     /// <summary>开火前对齐复检: 双机构对当前 aim(t) 都在容差内。</summary>
     private bool AlignOk(ArtilleryTask task, GunSystem gunSys, float tol) {
         TryComputeAimTargets(task, out var bearing, out var elev);
@@ -804,6 +832,7 @@ public class FSC
 
     /// <summary>移动目标当前方位（提前点方向, 冻结快照外推）。非移动返回 false。</summary>
     private bool TryGetMovingBearing(ArtilleryTask task, out float bearing) {
+        AdoptVelocityIfNeeded(task);   // 装填期采纳: 炮塔尽早转向提前方位, 避免装填完再大角度追
         bearing = task.angel;
         if (!task.IsMoving || !TargetLeadSolver.IsMoving(task.AimVel)) return false;
         var tof = ToFTable.FlightTime(task.distance, task.LoadedCharge);

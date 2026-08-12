@@ -227,11 +227,13 @@ public class TacticalRadar
 
         // 移动侦测:位置采样历史首尾差分估速(4-5s 基线, 比单帧差分平滑)
         bool isMoving = false;
+        bool velocityKnown = false;
         Vector3 velocity = Vector3.zero;
         if (moveHistory.TryGetValue(key, out var hist))
         {
             hist.Enqueue((worldPos, Time.time));
             while (hist.Count > MoveHistorySize) hist.Dequeue();
+            velocityKnown = hist.Count >= 2;   // 首个采样点无速度, 等下一轮扫描
             var first = hist.Peek();
             var last = hist.Last();
             float dt = last.time - first.time;
@@ -266,6 +268,7 @@ public class TacticalRadar
             IsUnderground = isUnderground,
             WorldPos = worldPos,
             IsMoving = isMoving,
+            VelocityKnown = velocityKnown,
             Velocity = velocity,
             ChildIndex = 0, // 不再使用，保留兼容
             ImmuneShells = immune
@@ -289,6 +292,24 @@ public class TacticalRadar
             if (d < best) { best = d; nearest = key; }
         });
         return nearest;
+    }
+
+    /// <summary>
+    /// 取目标最新一次扫描的运动状态(位置+速度)。速度未建立返回 false。
+    /// 供冷启动任务装填期采纳快照用(一次性, 不连续查)。
+    /// </summary>
+    public bool TryGetMotion(string entityId, out Vector3 pos, out Vector3 vel)
+    {
+        foreach (var t in AliveHostiles)
+        {
+            if (t.EntityId != entityId || !t.VelocityKnown) continue;
+            pos = t.WorldPos;
+            vel = t.Velocity;
+            return true;
+        }
+        pos = Vector3.zero;
+        vel = Vector3.zero;
+        return false;
     }
 
     /// <summary>获取 FireMission.Entities Dictionary（带缓存，F9 重载自动刷新）</summary>
