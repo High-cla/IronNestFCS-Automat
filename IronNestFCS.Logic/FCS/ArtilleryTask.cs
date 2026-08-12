@@ -48,4 +48,6 @@ public class ArtilleryTask {
     public Vector3 AimP0;
     public Vector3 AimVel;
     public float AimStartTime;
+    /// <summary>该弹毁伤半径(km), 集群/爆区覆盖用。0 = 无爆区(未设置)。</summary>
+    public float BlastRadiusKm;
 }

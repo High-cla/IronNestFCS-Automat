@@ -56,24 +56,35 @@ public class FcsModule : IFcsModule
             if (t == null) continue;
             var ti = t.Value;  // TargetInfo 是 struct,Nullable 解包
 
-            var task = new ArtilleryTask
-            {
-                targetId = nextTargetId++,
-                entityId = ti.EntityId,
-                angel = ti.Angle,
-                distance = ti.Distance,
-                position = ti.WorldPos,
-                bulletType = TacticalDecider.ChooseShellType(ti),
-                useMaxCharge = TacticalDecider.ShouldUseMaxCharge(ti),
-                Source = TaskSource.Auto
-            };
-            // 移动目标冻结快照: 提前量解算全程从这三个字段外推(匀速假设, 不查雷达)
-            task.IsMoving = ti.IsMoving;
-            task.AimP0 = ti.WorldPos;
-            task.AimVel = ti.Velocity;
-            task.AimStartTime = Time.time;
+            // 软+静态目标先试集群(一发清多, 省弹); 无集群回单点。选择流程不动。
+            var task = fcs.TryBuildClusterTask(ti, nextTargetId);
+            if (task == null) task = CreateAutoTask(ti, nextTargetId);
+            nextTargetId++;
             fcs.EnqueueTask(task);
         }
+    }
+
+    /// <summary>单点自动任务(非集群路径): 现有选择/弹种/移动快照逻辑。BlastRadiusKm 供击发爆区注册。</summary>
+    private static ArtilleryTask CreateAutoTask(TacticalDecider.TargetInfo ti, int targetId)
+    {
+        var task = new ArtilleryTask
+        {
+            targetId = targetId,
+            entityId = ti.EntityId,
+            angel = ti.Angle,
+            distance = ti.Distance,
+            position = ti.WorldPos,
+            bulletType = TacticalDecider.ChooseShellType(ti),
+            useMaxCharge = TacticalDecider.ShouldUseMaxCharge(ti),
+            Source = TaskSource.Auto
+        };
+        // 移动目标冻结快照: 提前量解算全程从这三个字段外推(匀速假设, 不查雷达)
+        task.IsMoving = ti.IsMoving;
+        task.AimP0 = ti.WorldPos;
+        task.AimVel = ti.Velocity;
+        task.AimStartTime = Time.time;
+        task.BlastRadiusKm = ShellData.BlastRadiusKm(task.bulletType);
+        return task;
     }
 
     /// <summary>

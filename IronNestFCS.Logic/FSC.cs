@@ -687,9 +687,18 @@ public class FSC
                         yield return null;
                     }
                 }
+                // 爆区覆盖: 落点 = 静态任务目标/集群质心, 移动任务提前点; 半径 = 该弹毁伤半径
+                Vector3 impactPos = task.position;
+                if (task.IsMoving && TargetLeadSolver.IsMoving(task.AimVel))
+                {
+                    var tof = ToFTable.FlightTime(task.distance, task.LoadedCharge);
+                    impactPos = TargetLeadSolver.LeadPoint(task.AimP0, task.AimVel,
+                        Time.time - task.AimStartTime, tof);
+                }
+                float blastKm = task.BlastRadiusKm > 0f ? task.BlastRadiusKm : ShellData.BlastRadiusKm(task.bulletType);
                 task.Fired = true;
                 task.FiredAt = Time.time;
-                Registry.MarkFired(task);
+                Registry.MarkFiredBlast(task, impactPos, blastKm);
                 InFlight.Add(task);   // 面板倒计时从这里开始, 归零(估计落地)时移除
             }
             finally {
@@ -810,6 +819,53 @@ public class FSC
         bearing = Bearing(TargetLeadSolver.LeadPoint(task.AimP0, task.AimVel,
             Time.time - task.AimStartTime, tof));
         return true;
+    }
+
+    /// <summary>
+    /// 集群收益分析: 对静态软目标 T, 求 HE/HCHE 最大可覆盖集群(MEC 圆心落点, 友军禁区)。
+    /// 有集群(≥2) → 返回集群任务(位置提交, 打质心, 注册表按毁伤半径覆盖); 无 → null(调用方走单点)。
+    /// 选择流程不动——只在"本应打 HE"的软目标上做升级。
+    /// </summary>
+    public ArtilleryTask? TryBuildClusterTask(TacticalDecider.TargetInfo ti, int targetId)
+    {
+        if (ti.IsArmored || ti.IsUnderground || ti.IsMoving) return null;   // 只软+静态
+        if (EntityLocator == null) return null;
+
+        // 候选 = 未处理的软静态目标世界坐标(含已派发的覆盖区过滤)
+        var candidates = new List<Vector3>();
+        foreach (var o in EntityLocator.AliveHostiles)
+        {
+            if (o.EntityId == ti.EntityId) continue;
+            if (o.IsArmored || o.IsUnderground || o.IsMoving) continue;
+            if (Registry.IsHandled(o.EntityId)) continue;
+            if (Registry.IsHandledNear(o.WorldPos, 0f)) continue;
+            candidates.Add(o.WorldPos);
+        }
+        var friendlies = EntityLocator.AllyPositions;
+
+        var he = ClusterSolver.Best(ti.WorldPos, candidates,
+            ShellData.BlastRadiusKm(BulletType.HE), friendlies);
+        var hche = ClusterSolver.Best(ti.WorldPos, candidates,
+            ShellData.BlastRadiusKm(BulletType.HCHE), friendlies);
+
+        BulletType shell;
+        Vector3 impact;
+        if (he.HasValue && he.Value.Count >= 2) { shell = BulletType.HE; impact = he.Value.Impact; }
+        else if (hche.HasValue && hche.Value.Count >= 2) { shell = BulletType.HCHE; impact = hche.Value.Impact; }
+        else return null;
+
+        return new ArtilleryTask
+        {
+            targetId = targetId,
+            entityId = "",                                  // 位置提交(集群), 注册表按毁伤半径覆盖
+            angel = Bearing(impact),
+            distance = DistKm(impact),
+            position = impact,
+            bulletType = shell,
+            useMaxCharge = false,
+            Source = TaskSource.Auto,
+            BlastRadiusKm = ShellData.BlastRadiusKm(shell),
+        };
     }
 
     /// <summary>纯装饰: 装填期并行驱动一次游戏计算器（静态=正确数据, 移动=大致数据）。

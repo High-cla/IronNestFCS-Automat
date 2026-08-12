@@ -17,8 +17,8 @@ public sealed class TargetRegistry
     public const float FlightWindow = 65f;
     /// <summary>手动标记解析半径(km): 标记世界坐标附近该距离内的存活敌目标视为手动开火目标</summary>
     public const float ManualResolveMaxDistance = 1.0f;
-    /// <summary>位置提交(解析失败)的屏蔽半径(km)</summary>
-    private const float PositionCommitRadius = 0.3f;
+    /// <summary>位置提交默认覆盖半径(世界单位, 手动解析失败的位置任务)。集群/爆区任务用所选弹毁伤半径。</summary>
+    private const float DefaultCommitRadiusWorld = 0.3f;
 
     private readonly Dictionary<string, Entry> _byEntity = new();
     private readonly List<Entry> _positions = new();
@@ -30,6 +30,8 @@ public sealed class TargetRegistry
         public readonly Vector3 Pos;
         public bool Fired;
         public float FiredAt;
+        /// <summary>覆盖半径(世界单位)。集群/爆区任务 = 毁伤半径; 手动位置任务 = 默认。</summary>
+        public float Radius = DefaultCommitRadiusWorld;
 
         public Entry(ArtilleryTask owner, string? entityId, Vector3 pos)
         {
@@ -47,13 +49,40 @@ public sealed class TargetRegistry
         if (task.entityId is { Length: > 0 } id)
             _byEntity[id] = new Entry(task, id, task.position);
         else
-            _positions.Add(new Entry(task, null, task.position));
+        {
+            var e = new Entry(task, null, task.position);
+            // 集群任务从派发起就带毁伤半径覆盖(装填期防重复起簇/点射); 手动位置任务用默认
+            e.Radius = task.BlastRadiusKm > 0f ? ShellData.KmToWorld(task.BlastRadiusKm) : DefaultCommitRadiusWorld;
+            _positions.Add(e);
+        }
     }
 
     /// <summary>击发后调用: 启动飞行窗口计时。</summary>
     public void MarkFired(ArtilleryTask task)
     {
         if (Find(task) is { } e) { e.Fired = true; e.FiredAt = Time.time; }
+    }
+
+    /// <summary>
+    /// 击发时注册爆区覆盖: 落点 + 毁伤半径(世界单位), IsHandledNear 覆盖范围内所有目标
+    /// （单点 HE 也会连带炸掉邻居 → 邻居不再被重复开火）。单点 entityId 任务新增落点条目;
+    /// 位置任务(集群/手动)更新现有条目半径。顺带启动飞行窗口。
+    /// </summary>
+    public void MarkFiredBlast(ArtilleryTask task, Vector3 impactPos, float blastRadiusKm)
+    {
+        float rWorld = blastRadiusKm > 0f ? ShellData.KmToWorld(blastRadiusKm) : DefaultCommitRadiusWorld;
+        Entry? pos = null;
+        foreach (var e in _positions)
+            if (e.Owner == task) { pos = e; break; }
+        if (pos == null)
+        {
+            pos = new Entry(task, null, impactPos) { Radius = rWorld };
+            _positions.Add(pos);
+        }
+        else pos.Radius = rWorld;
+        pos.Fired = true;
+        pos.FiredAt = Time.time;
+        MarkFired(task);   // 同步 entityId 条目(单点任务), 幂等
     }
 
     /// <summary>任务结束(未击发)时解除登记。幂等。</summary>
@@ -79,7 +108,7 @@ public sealed class TargetRegistry
         foreach (var e in _positions)
         {
             if (e.IsExpired) continue;
-            if (Vector3.Distance(pos, e.Pos) <= radius + PositionCommitRadius) return true;
+            if (Vector3.Distance(pos, e.Pos) <= radius + e.Radius) return true;
         }
         _positions.RemoveAll(p => p.IsExpired);
         return false;

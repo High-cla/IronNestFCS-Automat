@@ -42,6 +42,8 @@ public class TacticalRadar
 
     public bool AutoPlaceMarkers { get; set; } = true;
     public List<TacticalDecider.TargetInfo> AliveHostiles { get; private set; } = new();
+    /// <summary>存活友军世界坐标(集群落点友军禁区检查用), Scan 时刷新。</summary>
+    public List<Vector3> AllyPositions { get; private set; } = new();
     public int SweptCount => sweptIds.Count;
 
     public TacticalRadar(FSC fcs) => this.fcs = fcs;
@@ -66,12 +68,16 @@ public class TacticalRadar
     public void Scan()
     {
         AliveHostiles.Clear();
+        AllyPositions.Clear();
         var targets = new List<TacticalDecider.TargetInfo>();
         var aliveIds = new List<string>();
 
         ForEachEntity((key, me) =>
         {
             if (IsAlive(me)) aliveIds.Add(key);
+            // 存活友军坐标 → 集群落点友军禁区检查(不能炸到友军)
+            if (IsAlly(me) && IsAlive(me) && TryGetWorldPos(me, out var allyPos))
+                AllyPositions.Add(allyPos);
             var t = BuildTargetInfo(key, me);
             if (t != null) targets.Add(t.Value);
         });
@@ -146,6 +152,13 @@ public class TacticalRadar
     /// <summary>敌对 = 带 Enemy/Target 位且非 Reference(Ally-only 已天然排除)</summary>
     private static bool IsHostileRole(int role) =>
         role >= 0 && (role & (RoleEnemy | RoleTarget)) != 0 && (role & RoleReference) == 0;
+
+    /// <summary>友军 = 带 Ally 位且非 Reference</summary>
+    private static bool IsAlly(object me)
+    {
+        int role = GetRole(me);
+        return role >= 0 && (role & RoleAlly) != 0 && (role & RoleReference) == 0;
+    }
 
     /// <summary>世界坐标: 优先 Location.transform.position, 兜底 coordinateRoot.TransformPoint</summary>
     private bool TryGetWorldPos(object me, out Vector3 worldPos)
