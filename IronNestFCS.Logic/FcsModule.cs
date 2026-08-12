@@ -67,6 +67,11 @@ public class FcsModule : IFcsModule
                 useMaxCharge = TacticalDecider.ShouldUseMaxCharge(ti),
                 Source = TaskSource.Auto
             };
+            // 移动目标冻结快照: 提前量解算全程从这三个字段外推(匀速假设, 不查雷达)
+            task.IsMoving = ti.IsMoving;
+            task.AimP0 = ti.WorldPos;
+            task.AimVel = ti.Velocity;
+            task.AimStartTime = Time.time;
             fcs.EnqueueTask(task);
         }
     }

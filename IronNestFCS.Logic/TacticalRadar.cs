@@ -30,9 +30,10 @@ public class TacticalRadar
     private readonly FSC fcs;
     private readonly HashSet<string> sweptIds = new();
 
-    // 移动侦测:上次扫描的实体位置快照(EntityId → 位置/时间),相邻扫描差分估速。
-    // 正式版出现移动目标(匀速直线为主),先收集真实速度数据再定预测策略。
-    private readonly Dictionary<string, (Vector3 pos, float time)> moveSnapshots = new();
+    // 移动侦测:每个实体的位置采样历史(≤4 点),首尾差分估速 → 4-5s 基线比单帧差分平滑。
+    // 冻结快照的提前量精度依赖它(速度噪声随装填+飞行时长放大)。正式版移动目标匀速直线为主。
+    private readonly Dictionary<string, Queue<(Vector3 pos, float time)>> moveHistory = new();
+    private const int MoveHistorySize = 4;
 
     // 缓存的 FireMission 引用（按 F9 重载后失效，Scan 内自动刷新）
     private FireMission? _cachedFm;
@@ -224,23 +225,35 @@ public class TacticalRadar
 
         if (!TryGetWorldPos(me, out var worldPos)) return null;
 
-        // 移动侦测:与上次扫描位置差分 → 速度向量(桌面单位/秒 ×3.8164 = km/s)
+        // 移动侦测:位置采样历史首尾差分估速(4-5s 基线, 比单帧差分平滑)
         bool isMoving = false;
         Vector3 velocity = Vector3.zero;
-        if (moveSnapshots.TryGetValue(key, out var snap) && Time.time - snap.time > 1f)
+        if (moveHistory.TryGetValue(key, out var hist))
         {
-            float dt = Time.time - snap.time;
-            Vector3 disp = worldPos - snap.pos;
-            velocity = disp / dt;
-            if (velocity.magnitude * 3.8164f > 0.001f)  // 约 1 m/s 阈值
+            hist.Enqueue((worldPos, Time.time));
+            while (hist.Count > MoveHistorySize) hist.Dequeue();
+            var first = hist.Peek();
+            var last = hist.Last();
+            float dt = last.time - first.time;
+            if (dt > 1f)
             {
-                isMoving = true;
-                MelonLogger.Msg($"[Radar] MOVING: '{name}' ({key}) " +
-                                $"v={velocity.magnitude * 3.8164f:F3}km/s 位移={disp.magnitude * 3.8164f:F3}km/{dt:F1}s " +
-                                $"from {snap.pos} to {worldPos}");
+                Vector3 disp = last.pos - first.pos;
+                velocity = disp / dt;
+                if (velocity.magnitude * 3.8164f > 0.001f)  // 约 1 m/s 阈值
+                {
+                    isMoving = true;
+                    MelonLogger.Msg($"[Radar] MOVING: '{name}' ({key}) " +
+                                    $"v={velocity.magnitude * 3.8164f:F3}km/s 位移={disp.magnitude * 3.8164f:F3}km/{dt:F1}s " +
+                                    $"from {first.pos} to {last.pos}");
+                }
             }
         }
-        moveSnapshots[key] = (worldPos, Time.time);
+        else
+        {
+            var q = new Queue<(Vector3 pos, float time)>();
+            q.Enqueue((worldPos, Time.time));
+            moveHistory[key] = q;
+        }
 
         return new TacticalDecider.TargetInfo
         {

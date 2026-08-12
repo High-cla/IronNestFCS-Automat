@@ -126,7 +126,8 @@ public class FcsWindow
         };
 
         GUI.color = stateColor;
-        GUI.Label(new Rect(x, y, w, h), $"{label} T{task.targetId}  {task.bulletType}  {task.progress}");
+        string movingTag = task.IsMoving ? " [MOV]" : "";
+        GUI.Label(new Rect(x, y, w, h), $"{label} T{task.targetId}  {task.bulletType}  {task.progress}{movingTag}");
         GUI.color = oldColor;
         y += lineH;
 

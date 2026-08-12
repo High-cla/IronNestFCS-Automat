@@ -56,6 +56,16 @@ public class FSC
     /// <summary>已击发、炮弹仍在飞行中的任务(面板倒计时显示)。归零(=射表估计落地)时移除。</summary>
     public readonly List<ArtilleryTask> InFlight = new();
 
+    /// <summary>机构就绪容差(度): 双机构与 aim 差小于此值且 CanFire 才进入确认。
+    /// 1° 已够——毁伤半径兜底(10km 处 1° ≈ 175m), 高装药压低漂移率(~0.3°/s)保证收敛。</summary>
+    private const float AimToleranceDeg = 1f;
+    /// <summary>移动任务装药预测: 额外覆盖装填时长不确定性的距离余量(km)</summary>
+    private const float MovingDistanceMarginKm = 1.5f;
+
+    // 连续瞄准几何缓存(Draggable Surface + turret), 避免每帧 GameObject.Find
+    private Transform? _mapSurface;
+    private Transform? _turretXf;
+
     /// <summary>手动任务目标解析器(FcsModule 创建雷达后注入)</summary>
     public TacticalRadar? EntityLocator { get; set; }
 
@@ -109,6 +119,7 @@ public class FSC
                   && TriggerConsole.TryBind();
         MelonLogger.Msg("[FCS] Initialize: " + (IsBound ? "success" : "failed"));
         if (IsBound) {
+            CacheAimGeometry();   // 连续瞄准几何缓存(一次, 避免每帧 GameObject.Find)
             // 驻留装药补给协程:保证装药充足,减少任务内等待购买。
             _runningCoroutines.Add(MelonCoroutines.Start(ReplenishPowderLoop()));
         }
@@ -495,37 +506,39 @@ public class FSC
     private IEnumerator RunTaskRoutine(LeftRight leftRight, ArtilleryTask task) {
         var gunSys = leftRight == LeftRight.Left ? LeftGun : RightGun;
 
-        // ===== 炮塔预约：任务一开始就在后台抢方向角并转向 =====
-        // 方向旋转和装填/升仰角互不冲突。后台协程阻塞式抢炮塔锁（"一旦释放就立即获取"），
-        // 一拿到就开始转向，与本任务接下来的整个装填+升仰角段重叠。等到击发前只需确认它转好，
-        // 而不必等仰角转完再从头抢炮塔、再转向。方向角必须独占到这一发打出去为止，
-        // 故锁一直持有到击发完成（WaitFire 后由 ReleaseOnce 归还）。
+        // ===== 炮塔预约：任务一开始就在后台抢炮塔锁并装填期追方位 =====
+        // 方向旋转与装填/升仰角不冲突。后台协程阻塞式抢炮塔锁（"一旦释放就立即获取"），
+        // 装填期每帧追实时方位(装填要求仰角静止)；装填完成后主流程接管双机构驱动。
+        // 炮塔方向必须独占到这一发打出去为止，故锁一直持有到击发完成(ReleaseOnce 归还)。
         var turret = new TurretReservation();
         // 独立的 fire-and-forget 协程，必须登记以便 Dispose 时一并 Stop，
         // 否则热重载后旧 ALC 的它仍被 Unity 驱动 → 崩溃。
         _runningCoroutines.Add(MelonCoroutines.Start(ReserveTurretAndRotate(task, turret)));
 
-        var powderCount = task.useMaxCharge ? 6 : _sceneInteractor.maxCharge ? 6 : BallisticCalculator.MinimumCharge(task.distance);
+        // 统一路径: 装药按预测最远距离定格（覆盖装填+飞行期目标位移）。静态任务 = ChargeFor(当前距离)。
+        var distNowKm = task.distance;
+        var distLeadMaxKm = distNowKm;
+        if (task.IsMoving && TargetLeadSolver.IsMoving(task.AimVel)) {
+            var tof = ToFTable.FlightTime(distNowKm, TargetLeadSolver.ChargeFor(distNowKm));
+            var far = TargetLeadSolver.LeadPoint(task.AimP0, task.AimVel, Time.time - task.AimStartTime + 60f, tof);
+            distLeadMaxKm = Mathf.Max(distNowKm, DistKm(far));
+        }
+        var powderCount = task.useMaxCharge || _sceneInteractor.maxCharge
+            ? 6
+            : Mathf.Min(6, TargetLeadSolver.ChargeFor(
+                distLeadMaxKm + (task.IsMoving ? MovingDistanceMarginKm : 0f)));
+        task.LoadedCharge = powderCount;
+        task.EstimatedToF = ToFTable.FlightTime(task.distance, powderCount);   // 面板倒计时起点
         MelonLogger.Msg($"[FCS] {leftRight} 装药决策: task.max={task.useMaxCharge} btn.max={_sceneInteractor.maxCharge} dist={task.distance:F2} → {powderCount}包");
 
-        // ===== 临界区 1：解算 =====
-        // 弹道计算器 / 确认台 / 采购台都是全局唯一硬件，必须串行。算完仰角即放，
-        // 让另一管炮能立刻进来算它自己的弹道，与本管炮接下来的长装填段重叠。
-        float elevation = 0f;
+        // ===== 临界区 1：采购（弹道解算已移到公式直算, 不在 desk 锁内）=====
+        // 仰角/方向角由 aim(t) 公式每帧算, 游戏计算器仅作并行装饰同步(见 SyncCalculatorVisual)。
+        // desk 锁只保护采购台(全局唯一硬件), 两门炮"抢占"问题随之消失。
         bool viable = true;
         bool slotReleased = false;
         yield return _deskLock.Acquire();
         try {
             task.progress = Progress.Calculating;
-            yield return BallisticCalculator.SetDistance(task.distance);
-            yield return BallisticCalculator.SetDirection(task.angel);
-            yield return BallisticCalculator.SetCharge(powderCount);
-            yield return BallisticCalculator.SetShellType(task.bulletType);
-            yield return BallisticCalculator.Calculate();
-            elevation = BallisticCalculator.GetElevation();
-            // 射表解算出: 面板从这里开始显示预计落弹(开火后转为倒计时)
-            task.EstimatedToF = ToFTable.FlightTime(task.distance, powderCount);
-
             // 装药不足则补购。单次采购未必补满（且偶发点击早于卡牌入槽而失败），
             // 故循环购买直到够本次发射所需，避免"装药不足但非 0"时直接推进、卡住后续装填。
             // 加购买次数上限兜底：采购始终无效时不至于无限循环（每次约 2.5s）。
@@ -560,6 +573,9 @@ public class FSC
         finally {
             _deskLock.Release();
         }
+
+        // 计算器纯装饰视觉同步: 与装填并行(不进任务关键路径)。desk 锁短持有, 登记以便 Dispose 停掉。
+        _runningCoroutines.Add(MelonCoroutines.Start(SyncCalculatorVisual(task, powderCount)));
 
         try {
             // 3b 切割点: 切手动时置 Canceled 的自动任务在此干净放弃——
@@ -615,21 +631,39 @@ public class FSC
                 }
             }
 
-            // ===== 锁外：升仰角（每管炮独立，最耗时段之一）=====
-            // 仰角杆是本管炮专属，不碰共享硬件；此时后台多半已把方向角转好。
+            // ===== 锁外：连续瞄准跟踪 =====
+            // 装填已完成 → 仰角可动。每帧重算 aim(t) 并驱动双机构, 直到收敛 + CanFire。
+            // 移动目标走提前量(冻结快照外推); 静态退化为恒定 aim（同一循环, 无分类边界）。
+            // 后台协程停止驱动方位, 主流程接管。
+            turret.PostLoad = true;
             task.progress = Progress.Aiming;
-            yield return gunSys.SetElevation(elevation);
-
-            // ===== 临界区 2：击发 =====
-            // 此处不再现抢炮塔——炮塔早已由后台预约持有。只等它转到位（通常已就绪，瞬间通过），
-            // 然后确认+击发。炮塔锁一直由本任务持有，直到击发完成才归还。
-            task.progress = Progress.WaitingForFire;
-            // 原子化:任务从开始装填起必须走完击发。炮塔锁串行——本任务的
-            // ReserveTurretAndRotate 后台协程最终会拿到锁并置 Ready;若中途切换
-            // 到手动模式,forceFire 保证已装填的任务自动发射,锁随之释放,后续任务流转。
-            while (!turret.Ready) {
+            var aimTrackStart = Time.time;
+            while (true) {
+                TryComputeAimTargets(task, out var bearingTarget, out var elevTarget);
+                // 出装药覆盖检查: 移动目标提前点距离超过装药射程 → 退化
+                if (task.IsMoving && TargetLeadSolver.IsMoving(task.AimVel)) {
+                    var tof = ToFTable.FlightTime(task.distance, task.LoadedCharge);
+                    var leadDist = DistKm(TargetLeadSolver.LeadPoint(task.AimP0, task.AimVel,
+                        Time.time - task.AimStartTime, tof));
+                    if (leadDist * 0.2f > task.LoadedCharge + 0.1f) {
+                        task.progress = Progress.Failed;
+                        yield break;
+                    }
+                }
+                Turret.SetDesiredRotation(bearingTarget);
+                gunSys.SetElevationTarget(elevTarget);
+                // 收敛判定对"当前帧目标值"比较（移动时 aim 每帧漂移, 机构追上即收敛）
+                if (gunSys.ElevationError(elevTarget) < AimToleranceDeg
+                    && Turret.AngleError(bearingTarget) < AimToleranceDeg
+                    && gunSys.CanFire())
+                    break;
+                // 兜底: 时间制(帧数在 60fps 下只有 1/60 秒/次, 帧数会误杀 32s 仰角摆动)
+                if (Time.time - aimTrackStart > 240f) { task.progress = Progress.Failed; yield break; }
                 yield return null;
             }
+
+            // ===== 击发（turret 锁仍由后台持有, 直接确认+击发）=====
+            task.progress = Progress.WaitingForFire;
             try {
                 yield return TriggerConsole.ConfirmTask();
                 yield return TriggerConsole.ConfirmBullet();
@@ -638,9 +672,21 @@ public class FSC
                 yield return TriggerConsole.ReadyToFire();
                 yield return TriggerConsole.Arm(leftRight);
                 if (_sceneInteractor.AutoFire || task.forceFire) {
+                    // 确认序列 ~3-4s 期间 aim 漂移(机构追着走); 复检对齐后再打(5s 内追上, 否则尽力打)
+                    var recheckStart = Time.time;
+                    while (!AlignOk(task, gunSys, AimToleranceDeg) && Time.time - recheckStart < 5f) yield return null;
                     TriggerConsole.Fire();
+                    yield return gunSys.WaitFire();
+                } else {
+                    // AutoFire 关: 持续跟踪 aim(t) 直到玩家扳机——否则炮管停在旧点, 移动目标必偏。
+                    // 静态任务此循环目标值恒定, 退化为无操作等待。
+                    while (!gunSys.IsPendingReload()) {
+                        TryComputeAimTargets(task, out var b, out var e);
+                        Turret.SetDesiredRotation(b);
+                        gunSys.SetElevationTarget(e);
+                        yield return null;
+                    }
                 }
-                yield return gunSys.WaitFire();
                 task.Fired = true;
                 task.FiredAt = Time.time;
                 Registry.MarkFired(task);
@@ -676,21 +722,22 @@ public class FSC
     }
 
     /// <summary>
-    /// 炮塔预约状态。三个标志全在主线程协作式调度下读写，无真正并发。
-    /// 生命周期：后台 <see cref="ReserveTurretAndRotate"/> 抢锁→转向→置 Ready；
-    /// 主流程击发后 / 任务放弃时 ReleaseTurretOnce 归还。Released 保证恰好归还一次。
+    /// 炮塔预约状态。四个标志全在主线程协作式调度下读写，无真正并发。
+    /// 生命周期：后台 <see cref="ReserveTurretAndRotate"/> 抢锁并装填期追方位；
+    /// 主流程装填完成后置 PostLoad 接管驱动；击发后 / 任务放弃时 ReleaseTurretOnce 归还。
+    /// Released 保证恰好归还一次。
     /// </summary>
     private sealed class TurretReservation {
-        public bool Acquired;  // 已拿到炮塔锁
-        public bool Ready;     // 已转到目标方向角
-        public bool Canceled;  // 主流程已放弃本次预约
-        public bool Released;  // 锁已归还（防重复 Release）
+        public bool Acquired;   // 已拿到炮塔锁
+        public bool PostLoad;   // 装填完成: 主流程接管驱动(后台停止)
+        public bool Canceled;   // 主流程已放弃本次预约
+        public bool Released;   // 锁已归还（防重复 Release）
     }
 
     /// <summary>
-    /// 后台预约炮塔并转向。阻塞式抢锁实现"一旦炮塔释放就立即获取"。
-    /// 抢到后若发现已被取消则立即归还、不空转；否则转到目标方向并置 Ready，
-    /// 此后炮塔由主流程在击发完成时归还（若转向期间被取消则在此自行归还）。
+    /// 后台预约炮塔。阻塞式抢锁实现"一旦炮塔释放就立即获取"。
+    /// 抢到后若发现已被取消则立即归还；否则装填期每帧追实时方位
+    /// （装填要求仰角静止, 只转方位）；装填完成后主流程接棒(PostLoad), 此处只持锁。
     /// </summary>
     private IEnumerator ReserveTurretAndRotate(ArtilleryTask task, TurretReservation res) {
         yield return _turretLock.Acquire();
@@ -699,11 +746,10 @@ public class FSC
             ReleaseTurretOnce(res);
             yield break;
         }
-        yield return Turret.SetRotation(task.angel);
-        res.Ready = true;
-        // 转向期间主流程可能已放弃（如解算失败）——此时主流程不会再击发，由这里归还。
-        if (res.Canceled) {
-            ReleaseTurretOnce(res);
+        while (!res.Released) {
+            if (!res.PostLoad && TryGetMovingBearing(task, out var bearing))
+                Turret.SetDesiredRotation(bearing);
+            yield return null;
         }
     }
 
@@ -712,6 +758,72 @@ public class FSC
         if (res.Acquired && !res.Released) {
             res.Released = true;
             _turretLock.Release();
+        }
+    }
+
+    // ===== 连续瞄准几何与 aim 辅助（统一路径共用）=====
+
+    /// <summary>缓存地图面 + turret 引用（一次, TryBind 时调用）。避免每帧 GameObject.Find。</summary>
+    private void CacheAimGeometry() {
+        _mapSurface = GameObject.Find("Draggable Surface")?.transform;
+        _turretXf = MapTable.Turret;
+    }
+
+    /// <summary>世界坐标 → 距离 km（与 TacticalRadar.CalcDistance 同换算）</summary>
+    private float DistKm(Vector3 worldPos) {
+        if (_mapSurface == null || _turretXf == null) return 0f;
+        var target = _mapSurface.InverseTransformPoint(worldPos) - _turretXf.localPosition;
+        return target.magnitude * 3.8164f;
+    }
+
+    /// <summary>世界坐标 → 方位角（与 TacticalRadar.CalcAngle 同逻辑）</summary>
+    private float Bearing(Vector3 worldPos) {
+        if (_mapSurface == null || _turretXf == null) return 0f;
+        var target = _mapSurface.InverseTransformPoint(worldPos) - _turretXf.localPosition;
+        var angle = Vector3.SignedAngle(target, Vector3.up, Vector3.forward);
+        return angle < 0 ? angle + 360f : angle;
+    }
+
+    /// <summary>当前 aim 目标值。移动目标从冻结快照外推; 静态回退固定值。返回是否算移动。</summary>
+    private bool TryComputeAimTargets(ArtilleryTask task, out float bearing, out float elev) {
+        bearing = task.angel;
+        elev = TargetLeadSolver.Elevation(task.distance, task.LoadedCharge);
+        if (!task.IsMoving || !TargetLeadSolver.IsMoving(task.AimVel)) return false;
+        var tof = ToFTable.FlightTime(task.distance, task.LoadedCharge);
+        var aim = TargetLeadSolver.LeadPoint(task.AimP0, task.AimVel, Time.time - task.AimStartTime, tof);
+        bearing = Bearing(aim);
+        elev = TargetLeadSolver.Elevation(DistKm(aim), task.LoadedCharge);
+        return true;
+    }
+
+    /// <summary>开火前对齐复检: 双机构对当前 aim(t) 都在容差内。</summary>
+    private bool AlignOk(ArtilleryTask task, GunSystem gunSys, float tol) {
+        TryComputeAimTargets(task, out var bearing, out var elev);
+        return gunSys.ElevationError(elev) < tol && Turret.AngleError(bearing) < tol;
+    }
+
+    /// <summary>移动目标当前方位（提前点方向, 冻结快照外推）。非移动返回 false。</summary>
+    private bool TryGetMovingBearing(ArtilleryTask task, out float bearing) {
+        bearing = task.angel;
+        if (!task.IsMoving || !TargetLeadSolver.IsMoving(task.AimVel)) return false;
+        var tof = ToFTable.FlightTime(task.distance, task.LoadedCharge);
+        bearing = Bearing(TargetLeadSolver.LeadPoint(task.AimP0, task.AimVel,
+            Time.time - task.AimStartTime, tof));
+        return true;
+    }
+
+    /// <summary>纯装饰: 装填期并行驱动一次游戏计算器（静态=正确数据, 移动=大致数据）。
+    /// 不回传仰角, 不参与瞄准。desk 锁短持有, 与采购/另一门炮互斥。</summary>
+    private IEnumerator SyncCalculatorVisual(ArtilleryTask task, int powderCount) {
+        yield return _deskLock.Acquire();
+        try {
+            yield return BallisticCalculator.SetDistance(task.distance);
+            yield return BallisticCalculator.SetDirection(task.angel);
+            yield return BallisticCalculator.SetCharge(powderCount);
+            yield return BallisticCalculator.SetShellType(task.bulletType);
+            yield return BallisticCalculator.Calculate();
+        } finally {
+            _deskLock.Release();
         }
     }
 }

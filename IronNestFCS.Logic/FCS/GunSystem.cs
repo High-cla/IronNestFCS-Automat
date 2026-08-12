@@ -233,7 +233,22 @@ public class GunSystem {
             yield return new WaitForSeconds(0.1f);
         }
     }
-    
+
+    /// <summary>非阻塞: 设仰角杆目标值, 不等待。连续跟踪每帧调用。</summary>
+    public void SetElevationTarget(float elevation) {
+        if (elevationLever == null) return;
+        elevationLever.SetSliderValue(elevation);
+    }
+
+    /// <summary>当前仰角(度)与目标差。就绪判定用。</summary>
+    public float ElevationError(float target) {
+        if (gunController == null) return 0f;
+        return Mathf.Abs(gunController.CurrentElevation - target);
+    }
+
+    /// <summary>是否已处于击发/待击发状态（玩家拉扳机后为 true）。手动等待判定用。</summary>
+    public bool IsPendingReload() => gunController != null && gunController.pendingReload;
+
     public int RemainingCharges() {
         return (int)remainingCharges.CurrentNumber;
     }
