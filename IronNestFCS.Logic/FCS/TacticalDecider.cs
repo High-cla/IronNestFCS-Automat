@@ -60,22 +60,22 @@ public static class TacticalDecider
     }
 
     /// <summary>
-    /// 自动弹种选择，成本优先：AP/HE = 3点，HCHE = 5点。
-    /// 装甲/地下 → AP（穿透），其余 → HE（通用）。
-    /// HCHE 仅作免疫降级备选。
+    /// 自动弹种选择，成本优先：软目标单点 LE（轻弹省点，单个目标用不上 HE 的杀伤包络），
+    /// 装甲/地下 → AP（穿透）。免疫时交叉降级，HCHE 仅作最后兜底。
+    /// 注意：集群路径不经过这里（TryBuildClusterTask 直接选 HE/HCHE，覆盖 ≥2 才成簇）。
     /// </summary>
     public static BulletType ChooseShellType(TargetInfo t)
     {
         var immune = t.ImmuneShells ?? new HashSet<string>();
 
-        // 首选：装甲/地下需要穿透，其余 HE 足以解决
-        BulletType primary = (t.IsArmored || t.IsUnderground) ? BulletType.AP : BulletType.HE;
+        // 首选：装甲/地下需要穿透，软目标单点 LE 足够
+        BulletType primary = (t.IsArmored || t.IsUnderground) ? BulletType.AP : BulletType.LE;
 
         if (!immune.Contains(primary.ToString()))
             return primary;
 
         // 首选被免疫 → 换另一个低成本弹种
-        var fallback = primary == BulletType.AP ? BulletType.HE : BulletType.AP;
+        var fallback = primary == BulletType.AP ? BulletType.LE : BulletType.AP;
         if (!immune.Contains(fallback.ToString()))
             return fallback;
 

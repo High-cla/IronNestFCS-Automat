@@ -454,6 +454,15 @@ public class FSC
     /// ponytail: 只列 STAR; 其他非杀伤弹(SMOKE 等)出现同样屏蔽再扩展。</summary>
     private static bool IsKillContract(ArtilleryTask t) => t.bulletType != BulletType.STAR;
 
+    /// <summary>弹种不可用回退链: LE/AP 未解锁 → HE(开局即有); HE 不可用 → HCHE。链尾返回自身。</summary>
+    private static BulletType FallbackShell(BulletType t) => t switch
+    {
+        BulletType.LE => BulletType.HE,
+        BulletType.AP => BulletType.HE,
+        BulletType.HE => BulletType.HCHE,
+        _ => t
+    };
+
     /// <summary>插队：任务放到队列最前面，用于高优先级目标</summary>
     public void EnqueueTaskFront(ArtilleryTask task) {
         task.progress = Progress.Pending;
@@ -529,13 +538,22 @@ public class FSC
         try {
             task.progress = Progress.SelectingBullet;
             // 弹仓里没有目标弹种则采购（采购台也是共享硬件，放在锁内）。
+            // 未解锁弹种(如 LE)采购点击无效——采购后核验弹是否真进舱, 未进则沿回退链换弹重试,
+            // 避免"LE 永远买不到 → 任务失败 → 重新派发再试 LE"的死循环。
             if (!gunSys.HaveBulletInCylinder(task.bulletType)) {
                 if (!gunSys.HaveEmptyShellInCylinder()) {
                     task.progress = Progress.Failed;
                     viable = false;
                 }
                 else {
-                    yield return _purchaseDeck.BuyShell(task.bulletType, leftRight);
+                    for (var attempt = 0; attempt < 4; attempt++) {
+                        yield return _purchaseDeck.BuyShell(task.bulletType, leftRight);
+                        if (gunSys.HaveBulletInCylinder(task.bulletType)) break;   // 到货
+                        var next = FallbackShell(task.bulletType);
+                        if (next == task.bulletType) break;   // 链尽头, 不再换
+                        MelonLogger.Msg($"[FCS] {leftRight} 弹种 {task.bulletType} 不可用(未解锁?), 回退 {next}");
+                        task.bulletType = next;
+                    }
                 }
             }
         }
@@ -681,6 +699,7 @@ public class FSC
                 yield return TriggerConsole.ConfirmRotation();
                 yield return TriggerConsole.ConfirmElevation();
                 yield return TriggerConsole.ReadyToFire();
+                // 臂杆自动拉下 = 该炮管就绪(此刻方位/仰角已收敛, 不会在错误方向角臂下)
                 yield return TriggerConsole.Arm(leftRight);
                 if (_sceneInteractor.AutoFire || task.forceFire) {
                     // 确认序列 ~3-4s 期间 aim 漂移(机构追着走); 复检对齐后再打(5s 内追上, 否则尽力打)
@@ -710,6 +729,7 @@ public class FSC
                 task.Fired = true;
                 task.FiredAt = Time.time;
                 Registry.MarkFiredBlast(task, impactPos, blastKm);
+                if (task.ClusterMembers is { Count: > 0 }) Registry.CommitMembers(task, task.ClusterMembers);
                 InFlight.Add(task);   // 面板倒计时从这里开始, 归零(估计落地)时移除
             }
             finally {
@@ -818,19 +838,35 @@ public class FSC
     }
 
     /// <summary>
-    /// 冷启动快照补充(一次性): 任务创建时目标速度未建立(刚被照亮/刚出现), 装填期从雷达
-    /// 最新扫描采纳位置+速度, 重新冻结快照(时间=采纳时刻)。之后仍按冻结公式外推, 不连续查雷达。
-    /// 静止目标采纳后 IsMoving=false, 退化为静态(位置也顺带刷新)。
+    /// 快照采纳(装填期与瞄准期调用):
+    /// 1. 冷启动(一次性): 目标刚出现无速度, 从雷达最新扫描采纳位置+速度, 重新冻结快照。
+    /// 2. 变速/停车(按需): 恒定匀速假设对"可被逼停"的目标失效(实测列车 0.008→0——轨道被毁停车),
+    ///    雷达估速明显变化(>2m/s)时重冻结快照; 速度跌破阈值 → 退化为静态瞄准当前位置, 停止追幽灵提前点。
+    /// 仍按冻结公式外推, 不连续跟踪——只在速度实质变化时重置。
     /// </summary>
     private void AdoptVelocityIfNeeded(ArtilleryTask task) {
-        if (!task.VelocityUnknown || EntityLocator == null) return;
-        if (!EntityLocator.TryGetMotion(task.entityId, out var pos, out var vel)) return;
-        task.AimP0 = pos;
-        task.AimVel = vel;
-        task.AimStartTime = Time.time;
-        task.VelocityUnknown = false;
-        task.IsMoving = TargetLeadSolver.IsMoving(vel);
-        MelonLogger.Msg($"[FCS] 已采纳 {task.entityId} 速度 {vel.magnitude * 3.8164f:F3}km/s, 快照重置");
+        if (EntityLocator == null) return;
+        if (task.VelocityUnknown) {
+            if (EntityLocator.TryGetMotion(task.entityId, out var pos, out var vel)) {
+                task.AimP0 = pos;
+                task.AimVel = vel;
+                task.AimStartTime = Time.time;
+                task.VelocityUnknown = false;
+                task.IsMoving = TargetLeadSolver.IsMoving(vel);
+                MelonLogger.Msg($"[FCS] 已采纳 {task.entityId} 速度 {vel.magnitude * 3.8164f:F3}km/s, 快照重置");
+            }
+            return;
+        }
+        if (task.IsMoving && task.entityId is { Length: > 0 }
+            && EntityLocator.TryGetMotion(task.entityId, out var livePos, out var liveVel)
+            && (liveVel - task.AimVel).magnitude * ShellData.KmPerWorldUnit > 0.002f)
+        {
+            task.AimP0 = livePos;
+            task.AimVel = liveVel;
+            task.AimStartTime = Time.time;
+            task.IsMoving = TargetLeadSolver.IsMoving(liveVel);
+            MelonLogger.Msg($"[FCS] 变速采纳 {task.entityId}: v={liveVel.magnitude * 3.8164f:F3}km/s, 快照重置{(task.IsMoving ? "" : " (停车→静态)")}");
+        }
     }
 
     /// <summary>开火前对齐复检: 双机构对当前 aim(t) 都在容差内。</summary>
@@ -857,15 +893,19 @@ public class FSC
     /// </summary>
     public ArtilleryTask? TryBuildClusterTask(TacticalDecider.TargetInfo ti, int targetId)
     {
-        if (ti.IsArmored || ti.IsUnderground || ti.IsMoving) return null;   // 只软+静态
+        if (ti.IsArmored || ti.IsUnderground) return null;   // 只软目标(装甲/地下不走集群)
         if (EntityLocator == null) return null;
 
-        // 候选 = 未处理的软静态目标世界坐标(含已派发的覆盖区过滤)
+        // 候选 = 未处理软目标世界坐标(含已派发的覆盖区过滤)。
+        // 移动集群(列车/车队): 编队刚体——成员与 T 同向同速才可同簇(集群几何随动不变),
+        // 快照位置成簇, 任务带 IsMoving 快照, 现有提前量路径把整簇带到命中点。
         var candidates = new List<Vector3>();
         foreach (var o in EntityLocator.AliveHostiles)
         {
             if (o.EntityId == ti.EntityId) continue;
-            if (o.IsArmored || o.IsUnderground || o.IsMoving) continue;
+            if (o.IsArmored || o.IsUnderground) continue;
+            if (o.IsMoving != ti.IsMoving) continue;
+            if (o.IsMoving && (o.Velocity - ti.Velocity).magnitude * ShellData.KmPerWorldUnit > 0.002f) continue;
             if (Registry.IsHandled(o.EntityId)) continue;
             if (Registry.IsHandledNear(o.WorldPos, 0f)) continue;
             candidates.Add(o.WorldPos);
@@ -873,15 +913,39 @@ public class FSC
         var friendlies = EntityLocator.AllyPositions;
 
         var he = ClusterSolver.Best(ti.WorldPos, candidates,
-            ShellData.BlastRadiusKm(BulletType.HE), friendlies);
+            ShellData.BlastRadiusKm(BulletType.HE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HE));
         var hche = ClusterSolver.Best(ti.WorldPos, candidates,
-            ShellData.BlastRadiusKm(BulletType.HCHE), friendlies);
+            ShellData.BlastRadiusKm(BulletType.HCHE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HCHE));
 
         BulletType shell;
         Vector3 impact;
-        if (he.HasValue && he.Value.Count >= 2) { shell = BulletType.HE; impact = he.Value.Impact; }
-        else if (hche.HasValue && hche.Value.Count >= 2) { shell = BulletType.HCHE; impact = hche.Value.Impact; }
+        int coverCount;
+        if (he.HasValue && he.Value.Count >= 2) { shell = BulletType.HE; impact = he.Value.Impact; coverCount = he.Value.Count; }
+        else if (hche.HasValue && hche.Value.Count >= 2) { shell = BulletType.HCHE; impact = hche.Value.Impact; coverCount = hche.Value.Count; }
         else return null;
+
+        // 实测毁伤半径: 落点 1km 内所有存活目标距落点的径向距离 + 覆盖数。
+        // 配合 Reconcile 击杀日志读出真实杀伤半径(维基 0.27/0.63 疑似偏大——覆盖成员没死)。
+        var nearby = EntityLocator.AliveHostiles
+            .Where(h => (h.WorldPos - impact).magnitude * ShellData.KmPerWorldUnit < 1.0f)
+            .Select(h => $"{h.EntityId}@{(h.WorldPos - impact).magnitude * ShellData.KmPerWorldUnit:F2}km");
+        MelonLogger.Msg($"[FCS] 集群 {ti.EntityId}: {shell} 落点{DistKm(impact):F2}km 覆盖{coverCount}个{(ti.IsMoving ? " [移动]" : "")} | 1km内: {string.Join(" ", nearby)}");
+
+        // 移动集群覆盖成员: 击发时按 entityId 登记——爆区几何以落点为中心, 车列在落点后方,
+        // 在飞期间几何屏蔽拦不住, 需按实体屏蔽(死亡由 Reconcile 释放)。
+        List<string>? members = null;
+        if (ti.IsMoving)
+        {
+            float blastKm = ShellData.BlastRadiusKm(shell);
+            members = new List<string>();
+            foreach (var o in EntityLocator.AliveHostiles)
+            {
+                if (o.IsArmored || o.IsUnderground || !o.IsMoving) continue;
+                if ((o.Velocity - ti.Velocity).magnitude * ShellData.KmPerWorldUnit > 0.002f) continue;
+                if ((o.WorldPos - impact).magnitude * ShellData.KmPerWorldUnit <= blastKm)
+                    members.Add(o.EntityId);
+            }
+        }
 
         return new ArtilleryTask
         {
@@ -894,6 +958,13 @@ public class FSC
             useMaxCharge = false,
             Source = TaskSource.Auto,
             BlastRadiusKm = ShellData.BlastRadiusKm(shell),
+            // 移动集群: 冻结快照带整簇(装填期采纳无必要——速度已知), 提前量路径击发前重算提前点
+            IsMoving = ti.IsMoving,
+            AimP0 = impact,
+            AimVel = ti.Velocity,
+            AimStartTime = Time.time,
+            VelocityUnknown = false,
+            ClusterMembers = members,
         };
     }
 

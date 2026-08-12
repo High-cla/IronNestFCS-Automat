@@ -233,7 +233,6 @@ public class FcsModule : IFcsModule
             nearest.SetDialValue(value);
             done++;
         }
-        if (done > 0)
-            MelonLogger.Msg($"[FCS] 已自动拧紧 {done} 个阀门");
+        // 阀门日志太吵已移除; 拧紧功能保留
     }
 }

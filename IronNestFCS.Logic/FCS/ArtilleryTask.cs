@@ -52,4 +52,7 @@ public class ArtilleryTask {
     public float AimStartTime;
     /// <summary>该弹毁伤半径(km), 集群/爆区覆盖用。0 = 无爆区(未设置)。</summary>
     public float BlastRadiusKm;
+    /// <summary>移动集群覆盖成员(entityId): 击发时按实体登记——爆区几何以落点为中心,
+    /// 车列在落点后方(提前点在行进方向前方), 在飞屏蔽需按实体。死亡由 Reconcile 释放。</summary>
+    public List<string>? ClusterMembers;
 }

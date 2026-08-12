@@ -90,7 +90,8 @@ public class TacticalRadar
 
         var summary = string.Join(" | ", targets.Select(t =>
             $"({t.Priority}){t.EntityId} {(t.IsUnderground ? "UG" : "")}{(t.IsArmored ? "ARM" : "")}"));
-        MelonLogger.Msg($"[Radar] {targets.Count} hostiles: {summary}");
+        // allies 计数: 验证友军禁区检测是否工作(0 = 检测失败, 集群会误炸友军)
+        MelonLogger.Msg($"[Radar] {targets.Count} hostiles: {summary} allies:{AllyPositions.Count}");
 
         if (AutoPlaceMarkers)
         {

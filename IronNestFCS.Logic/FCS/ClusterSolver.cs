@@ -23,12 +23,13 @@ public static class ClusterSolver
 
     /// <summary>
     /// 求 T 周围 2R 内的最大可覆盖软集群。
-    /// 必须含 T, 子集最小覆盖圆半径 ≤ R, 且圆心不炸友军。
+    /// 必须含 T, 子集最小覆盖圆半径 ≤ R, 且圆心不炸友军(friendlySafeKm = 杀伤包络+余量)。
     /// 无集群(只有 T)返回 null。softTargets 应为未处理的软目标世界坐标, 不含 T 自身位置。
     /// </summary>
-    public static Cluster? Best(Vector3 t, List<Vector3> softTargets, float rKm, List<Vector3> friendlies)
+    public static Cluster? Best(Vector3 t, List<Vector3> softTargets, float rKm, List<Vector3> friendlies, float friendlySafeKm)
     {
         float r = ShellData.KmToWorld(rKm);
+        float rFriendly = ShellData.KmToWorld(friendlySafeKm);
 
         // 候选 = T 周围 2R(直径) 内的软目标
         var cand = new List<Vector3> { t };
@@ -57,7 +58,7 @@ public static class ClusterSolver
             if (count <= bestCount) continue;
             if (!TryMinEnclosingCircle(set, out var center, out float radius)) continue;
             if (radius > r + 1e-4f) continue;                    // 装不进爆圆
-            if (HasFriendlyNear(center, r, friendlies)) continue; // 友军禁区
+            if (HasFriendlyNear(center, rFriendly, friendlies)) continue; // 友军禁区(杀伤包络+余量)
             bestCount = count;
             bestImpact = center;
         }

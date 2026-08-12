@@ -63,6 +63,15 @@ public sealed class TargetRegistry
         if (Find(task) is { } e) { e.Fired = true; e.FiredAt = Time.time; }
     }
 
+    /// <summary>击发时按实体登记移动集群覆盖成员: 在飞屏蔽与爆区几何无关(列车在落点后方,
+    /// 几何半径兜不住)。死亡由 Reconcile 解除, 未击发任务结束由 Release 一并清理。幂等。</summary>
+    public void CommitMembers(ArtilleryTask task, IEnumerable<string> ids)
+    {
+        foreach (var id in ids)
+            if (!_byEntity.ContainsKey(id))
+                _byEntity[id] = new Entry(task, id, task.position);
+    }
+
     /// <summary>
     /// 击发时注册爆区覆盖: 落点 + 毁伤半径(世界单位), IsHandledNear 覆盖范围内所有目标
     /// （单点 HE 也会连带炸掉邻居 → 邻居不再被重复开火）。单点 entityId 任务新增落点条目;
