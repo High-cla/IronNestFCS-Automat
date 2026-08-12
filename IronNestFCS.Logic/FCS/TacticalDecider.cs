@@ -21,6 +21,8 @@ public static class TacticalDecider
         public bool IsArmored;
         public bool IsUnderground;
         public bool IsMoving;
+        /// <summary>速度已建立(≥2 个采样点): false=目标刚出现, 快照无提前量, 首发会打出生点</summary>
+        public bool VelocityKnown;
         /// <summary>目标速度向量(桌面单位/秒 ×3.8164 = km/s),移动目标预测用</summary>
         public Vector3 Velocity;
         public Vector3 WorldPos;

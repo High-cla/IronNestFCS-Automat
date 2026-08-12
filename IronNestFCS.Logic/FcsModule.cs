@@ -78,11 +78,13 @@ public class FcsModule : IFcsModule
             useMaxCharge = TacticalDecider.ShouldUseMaxCharge(ti),
             Source = TaskSource.Auto
         };
-        // 移动目标冻结快照: 提前量解算全程从这三个字段外推(匀速假设, 不查雷达)
+        // 移动目标冻结快照: 提前量解算全程从这三个字段外推(匀速假设, 不查雷达)。
+        // 速度未建立(刚出现)时标记 VelocityUnknown: 装填期从雷达采纳后再外推。
         task.IsMoving = ti.IsMoving;
         task.AimP0 = ti.WorldPos;
         task.AimVel = ti.Velocity;
         task.AimStartTime = Time.time;
+        task.VelocityUnknown = !ti.VelocityKnown;
         task.BlastRadiusKm = ShellData.BlastRadiusKm(task.bulletType);
         return task;
     }
