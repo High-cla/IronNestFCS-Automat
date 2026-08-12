@@ -5,7 +5,7 @@ using MelonLoader.Utils;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-[assembly: MelonInfo(typeof(FcsHostMod), "IronNestFCS", "1.4.0", "KK")]
+[assembly: MelonInfo(typeof(FcsHostMod), "IronNestFCS-Automat", "1.4.0", "KK")]
 [assembly: MelonGame("Iron Nest", "Iron Nest Heavy Turret Simulator")]
 
 namespace IronNestFCS;
@@ -33,7 +33,7 @@ public class FcsHostMod : MelonMod
         Directory.CreateDirectory(logicDir);
         string logicDll = Path.Combine(logicDir, "IronNestFCS.Logic.dll");
 
-        MelonLogger.Msg($"IronNestFCS Host Started。Logic path: {logicDll}");
+        MelonLogger.Msg($"IronNestFCS-Automat Host Started。Logic path: {logicDll}");
         MelonLogger.Msg($"Press {ReloadKeyName} to hot reload Logic.");
 
         reloader = new LogicReloader(logicDll, LogicTypeName);

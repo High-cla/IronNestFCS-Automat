@@ -1,4 +1,6 @@
-# IronNestFCS
+# IronNestFCS-Automat
+
+> 显示名 IronNestFCS-Automat;代码结构沿用 `IronNestFCS.*`(命名空间/程序集不变),便于持续顺取上游 svr2kos2 的更新。
 
 [演示视频 / Demo Video](https://www.bilibili.com/video/BV1y4gd6tEuT/) | [简体中文](#简体中文) | [English](#english)
 
@@ -54,8 +56,8 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 ### 安装（玩家）
 
 1. **MelonLoader**：下载 [MelonLoader.Installer.exe](https://melonwiki.xyz/)，选择游戏 exe 安装（IL2CPP 版）。游戏根目录出现 `MelonLoader/`
-2. **解压 Mod**：从 [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) 下载 `IronNestFCS_vX.X.X.zip`，解压到游戏根目录，将 `Mods/`、`UserData/`、`UserLibs/` 三个文件夹与游戏目录合并
-3. **启动验证**：左上角出现 IronNest FCS 面板即安装成功。若提示 `Dial 未绑定`，按 **F9** 重新绑定；游戏更新后失效则重新解压覆盖
+2. **解压 Mod**：从 [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) 下载 `IronNestFCS-Automat_vX.X.X.zip`，解压到游戏根目录，将 `Mods/`、`UserData/`、`UserLibs/` 三个文件夹与游戏目录合并
+3. **启动验证**：左上角出现 IronNestFCS-Automat 面板即安装成功。若提示 `Dial 未绑定`，按 **F9** 重新绑定；游戏更新后失效则重新解压覆盖
 
 ### 构建（开发者）
 
@@ -153,8 +155,8 @@ Three projects, host/logic split to serve hot reload:
 ### Install (Players)
 
 1. **MelonLoader**: download [MelonLoader.Installer.exe](https://melonwiki.xyz/), point it at the game exe (IL2CPP). A `MelonLoader/` folder appears in the game root
-2. **Extract the mod**: download `IronNestFCS_vX.X.X.zip` from [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) and extract into the game root, merging the three folders (`Mods/`, `UserData/`, `UserLibs/`)
-3. **Launch**: the IronNest FCS panel in the top-left corner means success. If it says `Dial 未绑定`, press **F9** to rebind; re-extract the zip if a game update breaks it
+2. **Extract the mod**: download `IronNestFCS-Automat_vX.X.X.zip` from [Releases](https://github.com/KKTIME2024/IronNestFCS/releases) and extract into the game root, merging the three folders (`Mods/`, `UserData/`, `UserLibs/`)
+3. **Launch**: the IronNestFCS-Automat panel in the top-left corner means success. If it says `Dial 未绑定`, press **F9** to rebind; re-extract the zip if a game update breaks it
 
 ### Build (Developers)
 

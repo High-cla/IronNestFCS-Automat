@@ -52,7 +52,7 @@ public class FcsWindow
 
         var oldColor = GUI.color;
         GUI.color = ClrTitle;
-        GUI.Label(new Rect(x, y, w, h), "IronNest FCS");
+        GUI.Label(new Rect(x, y, w, h), "IronNestFCS-Automat");
         GUI.color = oldColor;
         y += lineH;
 
