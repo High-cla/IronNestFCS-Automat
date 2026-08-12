@@ -1,7 +1,5 @@
 # IronNestFCS-Automat
 
-> 显示名 IronNestFCS-Automat;代码结构沿用 `IronNestFCS.*`(命名空间/程序集不变),便于持续顺取上游 svr2kos2 的更新。
-
 [演示视频 / Demo Video](https://www.bilibili.com/video/BV1y4gd6tEuT/) | [简体中文](#简体中文) | [English](#english)
 
 基于 [svr2kos2](https://github.com/svr2kos2) FCS 的全自动火控 Mod（战术雷达参考 [gxpppp](https://github.com/gxpppp/IronNestFCS) 的实现），为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！
