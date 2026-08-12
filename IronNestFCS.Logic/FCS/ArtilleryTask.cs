@@ -35,4 +35,8 @@ public class ArtilleryTask {
     public bool Canceled;
     /// <summary>已击发(Registry 飞行窗口计时依据; 未击发的任务结束时 Release 登记)</summary>
     public bool Fired;
+    /// <summary>解算后置位: 射表估计飞行时间(秒)。面板倒计时依据, 归零=估计落地。</summary>
+    public float EstimatedToF;
+    /// <summary>开火瞬间 Time.time, 面板倒计时起点。</summary>
+    public float FiredAt;
 }

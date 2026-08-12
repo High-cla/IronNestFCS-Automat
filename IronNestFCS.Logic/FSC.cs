@@ -53,6 +53,9 @@ public class FSC
     /// <summary>人机协同注册表: 在飞/排队/炮上目标的统一承包登记(手动+自动共用)</summary>
     public readonly TargetRegistry Registry = new();
 
+    /// <summary>已击发、炮弹仍在飞行中的任务(面板倒计时显示)。归零(=射表估计落地)时移除。</summary>
+    public readonly List<ArtilleryTask> InFlight = new();
+
     /// <summary>手动任务目标解析器(FcsModule 创建雷达后注入)</summary>
     public TacticalRadar? EntityLocator { get; set; }
 
@@ -353,6 +356,9 @@ public class FSC
 
     public void Update() {
         _sceneInteractor.Update();
+        // 面板倒计时归零(=射表估计落地)的任务移出在飞列表
+        if (InFlight.Count > 0)
+            InFlight.RemoveAll(t => Time.time - t.FiredAt >= t.EstimatedToF);
     }
 
     /// <summary>键盘快捷键触发射击目标（小键盘 1-4）</summary>
@@ -374,6 +380,7 @@ public class FSC
         _taskQueue.Clear();
         LeftTask = null;
         RightTask = null;
+        InFlight.Clear();
         Registry.Clear();
 
         _sceneInteractor.ShutDown();
@@ -516,6 +523,8 @@ public class FSC
             yield return BallisticCalculator.SetShellType(task.bulletType);
             yield return BallisticCalculator.Calculate();
             elevation = BallisticCalculator.GetElevation();
+            // 射表解算出: 面板从这里开始显示预计落弹(开火后转为倒计时)
+            task.EstimatedToF = ToFTable.FlightTime(task.distance, powderCount);
 
             // 装药不足则补购。单次采购未必补满（且偶发点击早于卡牌入槽而失败），
             // 故循环购买直到够本次发射所需，避免"装药不足但非 0"时直接推进、卡住后续装填。
@@ -633,7 +642,9 @@ public class FSC
                 }
                 yield return gunSys.WaitFire();
                 task.Fired = true;
+                task.FiredAt = Time.time;
                 Registry.MarkFired(task);
+                InFlight.Add(task);   // 面板倒计时从这里开始, 归零(估计落地)时移除
             }
             finally {
                 ReleaseTurretOnce(turret);

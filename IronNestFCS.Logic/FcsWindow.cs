@@ -1,3 +1,4 @@
+using System.Linq;
 using IronNestFCS.Logic.FCS;
 using MelonLoader;
 using UnityEngine;
@@ -33,10 +34,11 @@ public class FcsWindow
         float lineH = h + 2f;
 
         float extra = 0f;
-        if (fcs.LeftTask != null) extra += lineH * 3;
+        if (fcs.LeftTask != null) extra += lineH * 4;
         else extra += lineH;
-        if (fcs.RightTask != null) extra += lineH * 3;
+        if (fcs.RightTask != null) extra += lineH * 4;
         else extra += lineH;
+        extra += lineH * fcs.InFlight.Count(t => t.progress == Progress.Finished);
         extra += lineH * (fcs.PendingCount + 1);
         extra += 12f;
 
@@ -89,6 +91,17 @@ public class FcsWindow
                 $"  T{item.targetId}  {ConvertPosition(item.position)}  {item.angel,5:F1}°/{item.distance,5:F2}km  {item.bulletType}{maxChargeTag}");
             y += lineH;
         }
+
+        // 已击发、炮弹仍在飞的任务: 倒计时到 0(=射表估计落地)后由 FSC 移出。
+        // progress == Finished 的已离开炮位行, 不重复显示。
+        foreach (var t in fcs.InFlight)
+        {
+            if (t.progress != Progress.Finished) continue;
+            GUI.color = ClrSweep;
+            GUI.Label(new Rect(x, y, w, h), $"  In flight T{t.targetId}  {ImpactText(t)}");
+            GUI.color = oldColor;
+            y += lineH;
+        }
     }
 
     private float DrawGunRow(string label, ArtilleryTask? task, float x, float y, float w, float h, float lineH)
@@ -130,7 +143,24 @@ public class FcsWindow
         GUI.color = oldColor;
         y += lineH;
 
+        GUI.color = ClrWarning;
+        GUI.Label(new Rect(x + 12f, y, w - 12f, h), ImpactText(task));
+        GUI.color = oldColor;
+        y += lineH;
+
         return y;
+    }
+
+    /// <summary>预计落弹: 解算后显示估计值(~Xs); 开火后倒计时到 0(射表估计落地)。</summary>
+    private static string ImpactText(ArtilleryTask t)
+    {
+        if (t.EstimatedToF <= 0f) return "Impact: --";
+        if (t.Fired)
+        {
+            float remaining = Mathf.Max(0f, t.EstimatedToF - (Time.time - t.FiredAt));
+            return $"Impact: {remaining:F0}s";
+        }
+        return $"Impact: ~{t.EstimatedToF:F0}s";
     }
 
     private static void DrawDivider(float x, float y, float w)
