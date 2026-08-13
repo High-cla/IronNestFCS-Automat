@@ -64,8 +64,9 @@ public class FSC
 
     // 连续瞄准几何缓存(Draggable Surface + turret), 避免每帧 GameObject.Find
     private Transform? _mapSurface;
-    /// <summary>真实炮塔地图局部坐标(TurretLocation, 不可拖动), CacheAimGeometry 时缓存</summary>
+    /// <summary>真实炮塔地图局部坐标(TurretLocation, 不可拖动), 每 5s 刷新(后出现/紧急移动漂移自愈)</summary>
     private Vector3 _turretLocal;
+    private float _lastTurretSyncTime;   // 铁巢坐标每 5s 刷新节流
 
     /// <summary>手动任务目标解析器(FcsModule 创建雷达后注入)</summary>
     public TacticalRadar? EntityLocator { get; set; }
@@ -279,6 +280,12 @@ public class FSC
         // 面板倒计时归零(=射表估计落地)的任务移出在飞列表
         if (InFlight.Count > 0)
             InFlight.RemoveAll(t => Time.time - t.FiredAt >= t.EstimatedToF);
+        // 铁巢坐标每 5s 刷新: TurretLocation 可能在 TryBind 后才出现(场景晚就绪),
+        // 或玩家紧急拖动 Piece 后 fallback 基准漂移——真实炮塔坐标自愈(手动/自动都生效)。
+        if (IsBound && Time.time - _lastTurretSyncTime > 5f) {
+            _lastTurretSyncTime = Time.time;
+            _turretLocal = MapTable.GetTurretLocal();
+        }
     }
 
     /// <summary>键盘快捷键触发射击目标（小键盘 1-4）</summary>
