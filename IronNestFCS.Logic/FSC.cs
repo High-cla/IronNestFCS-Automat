@@ -707,8 +707,13 @@ public class FSC
     private IEnumerator ReserveTurretAndRotate(ArtilleryTask task, TurretReservation res) {
         // 不抢 _turretLock：方位旋转与另一管并行（单 Turret 共享机构, 后写者赢,
         // 但各自击发前必先抢锁复检, 不会在错误方位击发）。
+        // 对齐源头 svr2kos2: 装填期立即转静态方位(设一次, 引擎加速到 rotationSpeed 全速转,
+        // 转完恰逢装填完)。静态目标此前因 TryGetMovingBearing 返回 false 而装填期不转——
+        // 此处无条件设一次, 触发时机提前且不每帧重写 DesiredRotation(避免干扰引擎速度平滑)。
+        Turret.SetDesiredRotation(task.angel);
         while (!res.Released) {
-            // 主流程击发段接管后(Aiming)停止; 取消则退出。
+            // 主流程击发段接管后(Aiming)停止; 取消则退出。静态目标 TryGetMovingBearing 返回 false,
+            // 保持开头设的 task.angel 不重设; 移动目标速度建立后每帧追提前点。
             if (!res.Aiming && !res.Canceled && TryGetMovingBearing(task, out var bearing))
                 Turret.SetDesiredRotation(bearing);
             yield return null;
