@@ -144,27 +144,73 @@ public class TacticalRadar
         return aliveProp?.GetValue(me) is bool b && b;
     }
 
-    /// <summary>强制敌人可见: me.Location.VisibilityGroup.alpha=1。尽力而为——属性链任一环节为 null 静默跳过。</summary>
+    /// <summary>强制敌人可见: me.Location.VisibilityGroup.alpha=1 + State 隐藏位(0x80)清除
+    /// + VisualRoot SetActive(true) + RevealVisualRoot/KeepVisualRootLocked。
+    /// 参考 MapEnemyMarker(HSOS6) + Assembly-CSharp 反编译(EntityLocation.cs:523/538/593/1239/1250/1261)。
+    /// 真正隐藏机制=HideVisualRoot 每帧 SetActive(false)——alpha/State 只是辅助。尽力而为,属性链任一环节为 null 静默跳过。</summary>
     private void ForceVisible(string entityId, object me)
     {
         var locProp = me.GetType().GetProperty("Location", BindingFlags.Public | BindingFlags.Instance);
         var location = locProp?.GetValue(me);
         if (location == null) return;
 
-        var vgProp = location.GetType().GetProperty("VisibilityGroup", BindingFlags.Public | BindingFlags.Instance);
-        var vg = vgProp?.GetValue(location);
-        if (vg == null) return;
+        var locType = location.GetType();
 
-        var alphaProp = vg.GetType().GetProperty("alpha", BindingFlags.Public | BindingFlags.Instance);
-        if (alphaProp?.GetValue(vg) is float alpha && alpha < 0.5f)
+        var vgProp = locType.GetProperty("VisibilityGroup", BindingFlags.Public | BindingFlags.Instance);
+        var vg = vgProp?.GetValue(location);
+        if (vg != null)
         {
-            alphaProp.SetValue(vg, 1f);
-            if (_forcedVisibleLog.Add(entityId))
-                MelonLogger.Msg($"[Radar] 强制可见 {entityId} (VisibilityGroup.alpha→1)");
+            var alphaProp = vg.GetType().GetProperty("alpha", BindingFlags.Public | BindingFlags.Instance);
+            if (alphaProp?.GetValue(vg) is float alpha && alpha < 0.5f)
+                alphaProp.SetValue(vg, 1f);
+        }
+
+        // State 隐藏位(0x80=MapEntityStates 隐藏)清除——地图上不可见的另一机制
+        var stateProp = me.GetType().GetProperty("State", BindingFlags.Public | BindingFlags.Instance);
+        var stateVal = stateProp?.GetValue(me);
+        if (stateVal != null && (Convert.ToInt32(stateVal) & 0x80) != 0)
+        {
+            int stateNum = Convert.ToInt32(stateVal) & ~0x80;
+            var statesType = me.GetType().Assembly.GetType("MapEntityStates")
+                             ?? me.GetType().Assembly.GetType("Il2CppMapEntityStates");
+            stateProp.SetValue(me, statesType != null
+                ? Enum.ToObject(statesType, stateNum)
+                : (object)stateNum);
+            if (_forcedVisibleLog.Add(entityId + ":state"))
+                MelonLogger.Msg($"[Radar] 强制可见 {entityId} (State隐藏位清除)");
+        }
+
+        // ★ VisualRoot 激活——真正的隐藏机制 (EntityLocation.cs:538 VisualRoot GameObject, :1250 HideVisualRoot 每帧 SetActive(false))
+        var vrProp = locType.GetProperty("VisualRoot", BindingFlags.Public | BindingFlags.Instance);
+        if (vrProp?.GetValue(location) is UnityEngine.GameObject vrGo && !vrGo.activeSelf)
+        {
+            vrGo.SetActive(true);
+            if (_forcedVisibleLog.Add(entityId + ":vr"))
+                MelonLogger.Msg($"[Radar] 强制可见 {entityId} (VisualRoot SetActive(true))");
+        }
+
+        // RevealVisualRoot() + KeepVisualRootLocked() —— 锁住防每帧被 HideVisualRoot 重新隐藏
+        foreach (var methodName in new[] { "RevealVisualRoot", "KeepVisualRootLocked" })
+        {
+            var mi = locType.GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
+            if (mi != null)
+            {
+                try { mi.Invoke(location, null); }
+                catch { /* 尽力而为 */ }
+            }
+        }
+
+        // alpha 日志（State/VR 无操作时兜底提示）
+        if (vg != null)
+        {
+            var alphaProp2 = vg.GetType().GetProperty("alpha", BindingFlags.Public | BindingFlags.Instance);
+            if (alphaProp2?.GetValue(vg) is float alpha2 && alpha2 < 0.5f && _forcedVisibleLog.Add(entityId + ":alpha"))
+                MelonLogger.Msg($"[Radar] 强制可见 {entityId} (alpha→1)");
         }
     }
 
-    /// <summary>强制所有实体可见（仅可见性 hack，不扫描/不占标记/不改缓存）。手动模式雷达休眠时也调用，保证敌人始终可见。</summary>
+    /// <summary>强制所有实体可见（仅可见性 hack，不扫描/不占标记/不改缓存）。
+    /// 敌友都执行——手动模式雷达休眠时也调用，保证敌人始终可见。</summary>
     public void ForceAllVisible()
     {
         ForEachEntity((key, me) => ForceVisible(key, me));

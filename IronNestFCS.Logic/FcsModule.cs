@@ -18,7 +18,6 @@ public class FcsModule : IFcsModule
     private float lastScanTime;
     private float nextSweepTime;
     private float lastCbtPollTime;
-    private float lastVisTime;      // 强制可见周期计时（手动模式也生效）
     private bool autoMode;          // 全自动模式:true=雷达接管;false=手动(雷达完全休眠)
     private int lastCbtCount = -1;  // 检测 CBT timer 数量变化
 
@@ -117,12 +116,9 @@ public class FcsModule : IFcsModule
             OnGunIdle();
         }
 
-        // 强制敌人可见:两种模式都生效(独立于雷达扫描,手动模式雷达休眠时敌人也保持可见)
-        if (radar != null && fcs.IsBound && Time.time - lastVisTime > 5f)
-        {
-            lastVisTime = Time.time;
+        // 强制敌人可见:两种模式都生效,每帧调用——游戏可能每帧重置 alpha,5s 节流会错过(参考 MapEnemyMarker 每帧驱动)
+        if (radar != null && fcs.IsBound)
             radar.ForceAllVisible();
-        }
 
         // 轮询 CBT 计时器（每 5s），只在发现 timer 时打日志——仅全自动模式
         if (fcs.IsBound && autoMode && Time.time - lastCbtPollTime > 5f)
