@@ -17,6 +17,11 @@ public class PurchaseDeck {
         var cards = requisitionConsole.GetComponentsInChildren<PunchcardRuntime>();
         foreach (var card in cards) {
             MelonLogger.Msg($"[FCS] PurchaseDeck: Found card {card.CurrentDefinition.ID}");
+            // APHCHE 特殊卡: 由 AphcheDeck 每局注入, ID="APShellMod", 不能靠 Replace 后 TryParse 命中
+            if (card.CurrentDefinition.ID == AphcheDeck.CardId) {
+                bulletCards[BulletType.APHCHE] = card.transform;
+                continue;
+            }
             if (TryParse(
                     card.CurrentDefinition.ID.Replace("SMOKE", "SMK").Replace("Shell", ""),
                     out BulletType type
@@ -31,6 +36,12 @@ public class PurchaseDeck {
         _buyButton = requisitionConsole.FindChild("Universal Button").GetComponent<LookAtTarget>();
         
         return true;
+    }
+
+    /// <summary>AphcheDeck 加卡成功后动态注册该卡，避免错过 TryBind 时机的卡片。</summary>
+    public void RegisterCard(BulletType type, Transform card) {
+        bulletCards[type] = card;
+        MelonLogger.Msg($"[FCS] PurchaseDeck: RegisterCard {type} → {card.name}");
     }
     
     private DialInteractable GetLeftRightDial() {

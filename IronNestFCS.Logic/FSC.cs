@@ -401,6 +401,17 @@ public class FSC
         _harmony = null;
     }
 
+    /// <summary>启动并登记协程, Dispose 时统一 Stop。供 AphcheDeck 等外部模块使用。</summary>
+    public object StartTrackedCoroutine(IEnumerator routine)
+    {
+        var handle = MelonCoroutines.Start(routine);
+        _runningCoroutines.Add(handle);
+        return handle;
+    }
+
+    /// <summary>公开采购卡组, 供 AphcheDeck 注入后动态注册卡片。</summary>
+    public PurchaseDeck PurchaseDeck => _purchaseDeck;
+
     /// <summary>
     /// 驻留协程:每 5s 检查两管炮装药,低于阈值补一包。用 _deskLock 保护(采购台是共享硬件,
     /// 与任务内采购互斥)。TryBind 成功后登记进 _runningCoroutines,Dispose 时随协程一起 Stop。
