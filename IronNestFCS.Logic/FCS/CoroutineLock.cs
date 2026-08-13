@@ -26,6 +26,14 @@ public sealed class CoroutineLock {
         _held = true;
     }
 
+    /// <summary>尝试立即获取锁（非阻塞）。返回 true 表示拿到，调用方负责 finally Release。
+    /// 用于同方位齐射的非持锁者兜底：持锁者放弃后抢到锁自行击发。</summary>
+    public bool TryAcquire() {
+        if (_held) return false;
+        _held = true;
+        return true;
+    }
+
     public void Release() {
         _held = false;
     }
