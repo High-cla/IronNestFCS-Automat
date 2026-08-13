@@ -562,19 +562,9 @@ public class FSC
             // ===== 锁外：连续瞄准跟踪 =====
             // 装填已完成 → 仰角可动。每帧重算 aim(t) 并驱动双机构, 直到收敛 + CanFire。
             // 移动目标走提前量(冻结快照外推); 静态退化为恒定 aim（同一循环, 无分类边界）。
-            // 后台协程停止驱动方位, 主流程接管。
+            // 后台协程自由驱动方位(与另一管并行), 主流程仅跟踪仰角+方位, 不抢锁。
             turret.PostLoad = true;
-            // 击发串行化门(6bf05e9 回归修复): 全局扳机 Fire() 击发所有臂杆已拉下的炮管,
-            // 两管任务同时进击发段 = 双管齐射。锁由后台持有到击发完成(ReleaseTurretOnce)。
-            // 仰角杆每管独立——等锁期间照样追仰角(与另一管并行), 只有方位/击发段被锁串行化。
             task.progress = Progress.Aiming;
-            while (!turret.Acquired) {
-                TryComputeAimTargets(task, out _, out var elev);
-                gunSys.SetElevationTarget(elev);
-                yield return null;
-            }
-            turret.Aiming = true;   // 主流程接管方位(后台停止驱动)
-            MelonLogger.Msg($"[FCS] {leftRight} 炮塔锁已持有, 进入瞄准/击发段");
             var aimTrackStart = Time.time;
             while (true) {
                 TryComputeAimTargets(task, out var bearingTarget, out var elevTarget);
@@ -600,8 +590,26 @@ public class FSC
                 yield return null;
             }
 
-            // ===== 击发（turret 锁仍由后台持有, 直接确认+击发）=====
+            // ===== 击发串行化门(6bf05e9 回归修复): 全局扳机 Fire() 击发所有臂杆已拉下的炮管,
+            // 两管任务同时进击发段 = 双管齐射。锁只在击发段前抢——旋转全程并行, 此处串行击发。
+            // 抢锁等待期间另一管可能已转动共享炮塔, 因此抢到后复检对齐, 未对齐则继续追。
+            turret.Aiming = true;   // 主流程接管方位(后台停止驱动)
             task.progress = Progress.WaitingForFire;
+            yield return _turretLock.Acquire();
+            turret.Acquired = true;
+            MelonLogger.Msg($"[FCS] {leftRight} 炮塔锁已持有, 进入瞄准/击发段");
+            var lockRecheckStart = Time.time;
+            while (!AlignOk(task, gunSys, AimToleranceDeg) && Time.time - lockRecheckStart < 60f) {
+                TryComputeAimTargets(task, out var b, out var e);
+                Turret.SetDesiredRotation(b);
+                gunSys.SetElevationTarget(e);
+                yield return null;
+            }
+            if (!AlignOk(task, gunSys, AimToleranceDeg)) {
+                task.progress = Progress.Failed;
+                ReleaseTurretOnce(turret);   // 锁已抢到但未进 try, 手动归还
+                yield break;
+            }
             try {
                 yield return TriggerConsole.ConfirmTask();
                 yield return TriggerConsole.ConfirmBullet();
@@ -685,20 +693,16 @@ public class FSC
     }
 
     /// <summary>
-    /// 后台预约炮塔。阻塞式抢锁实现"一旦炮塔释放就立即获取"。
-    /// 抢到后若发现已被取消则立即归还；否则装填期每帧追实时方位
-    /// （装填要求仰角静止, 只转方位）；装填完成后主流程接棒(PostLoad), 此处只持锁。
+    /// 后台驱动方位。**不抢锁**——旋转与击发解耦: 装填期自由转方位
+    /// （装填要求仰角静止, 只转方位），击发段由主流程单独抢锁串行化（防双管齐射）。
+    /// 主流程击发段抢锁后置 <see cref="TurretReservation.Aiming"/>，此处停止驱动。
     /// </summary>
     private IEnumerator ReserveTurretAndRotate(ArtilleryTask task, TurretReservation res) {
-        yield return _turretLock.Acquire();
-        res.Acquired = true;
-        if (res.Canceled) {
-            ReleaseTurretOnce(res);
-            yield break;
-        }
+        // 不抢 _turretLock：方位旋转与另一管并行（单 Turret 共享机构, 后写者赢,
+        // 但各自击发前必先抢锁复检, 不会在错误方位击发）。
         while (!res.Released) {
-            // 主流程未接管前持续追方位(装填期+等锁期); 拿到锁接管后(Aiming)停止。
-            if (!res.Aiming && TryGetMovingBearing(task, out var bearing))
+            // 主流程击发段接管后(Aiming)停止; 取消则退出。
+            if (!res.Aiming && !res.Canceled && TryGetMovingBearing(task, out var bearing))
                 Turret.SetDesiredRotation(bearing);
             yield return null;
         }
