@@ -16,6 +16,20 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 
 为《铁巢：重炮模拟器》编写的 MelonLoader Mod。本仓库是 svr2kos2 原版 FCS 的分支：开启后 Mod 持续扫描全图敌情，自动完成弹道解算、弹种选择、采购装填、瞄准击发。**支持正式版全部 20 种弹种（采购卡自动识别）**。
 
+### 与上游的区别
+
+本仓库是 [svr2kos2](https://github.com/svr2kos2) 原版 FCS 的 deep-fork（经 [KKTIME2024](https://github.com/KKTIME2024/IronNestFCS-Automat) 演进，并已合并其 `da641f3` 齐射门 / `53bbbf0` 并行确认）。相对原版的关键差异：
+
+| 维度 | svr2kos2 原版 | 本仓库 |
+| --- | --- | --- |
+| 炮塔旋转 | 后台协程抢 `_turretLock`，**旋转全程独占座圈**，另一管排队等 | **旋转全程锁外并行**——双管同时转方位，仅击发瞬间串行（防双管齐射） |
+| 同方位齐射 | 无，持锁者专权，一管击发时另一管只能等 | **齐射门**：两管目标方位差 ≤0.1°（移动目标限同实体）放行双弹齐射，如 AP+HE 同目标同时出膛 |
+| 装填期旋转 | 装填期间不转方位 | **装填期立即转**——静态目标提前到位，触发提前 + 全速旋转（不每帧重写目标干扰速度平滑） |
+| 射击基准 | `Player Turret Piece`（可拖动标记，会随拖动漂移） | **真实炮塔坐标**（`TurretLocation`）+ **每 5s 刷新自愈**（场景晚就绪/紧急拖动后自动校正） |
+| 击发确认 | 5 个确认台顺序点击（就位→发射窗口长） | **确认与臂杆并行**——臂杆按下期间 0.01s 连点全部确认，就位→发射窗口 ~2.2s→~1.2s |
+| 敌人可见 | 依赖视野/探测 | **强制可见**（Radar hack），扫描不依赖视野 |
+| 死代码 | — | 移除 ~209 行（`GameStateWatcher` 整类等） |
+
 ### 核心功能
 
 #### Numpad 0 全自动扫荡（核心玩法）
@@ -115,6 +129,20 @@ MIT © 2025-2026 KK，基于 svr2kos2 的作品（MIT © 2026 svr2kos2），战�
 ### What is this
 
 A MelonLoader mod for *Iron Nest: Heavy Turret Simulator*. This is a deep-fork of svr2kos2's original FCS: it's a **full-auto sweep** — enable it and the mod continuously scans all targets, solves ballistics, picks shell types, purchases/loads ammunition, aims, confirms, and fires. Unattended combat for hours.
+
+### Differences from upstream
+
+Deep-fork of [svr2kos2](https://github.com/svr2kos2)'s original FCS (evolved via [KKTIME2024](https://github.com/KKTIME2024/IronNestFCS-Automat); its `da641f3` salvo gate / `53bbbf0` parallel-confirm are merged in, adapted to this fork's lock model):
+
+| Aspect | svr2kos2 upstream | This fork |
+| --- | --- | --- |
+| Turret rotation | Background coroutine grabs `_turretLock` — **rotation holds the shared traverse exclusively**, the other gun queues | **Rotation runs outside the lock** — both guns traverse in parallel; only the firing instant serializes (prevents accidental volley) |
+| Same-bearing salvo | None — lock-holder fires alone, other gun waits | **Salvo gate**: when both guns' target bearings differ ≤0.1° (moving targets: same entity only), both fire together — e.g. AP+HE on one target leave the barrels simultaneously |
+| Rotation during loading | Traverse not moved while loading | **Rotates immediately during loading** — static targets pre-aim early; full-speed rotation (no per-frame target rewrite disturbing speed smoothing) |
+| Aim reference | `Player Turret Piece` (draggable marker, drifts) | **Real turret coordinates** (`TurretLocation`) + **self-healing 5s refresh** (late scene init / emergency drag auto-corrects) |
+| Fire confirmation | 5 confirmation panels clicked sequentially (long ready-to-fire window) | **Confirmations parallel with arming** — all 5 tapped at 0.01s while the arming lever is held; ready-to-fire window ~2.2s → ~1.2s |
+| Enemy visibility | Relies on sighting/detection | **Force-visible radar hack**, sweep independent of line of sight |
+| Dead code | — | ~209 lines removed (`GameStateWatcher` class etc.) |
 
 ### Core Features
 
