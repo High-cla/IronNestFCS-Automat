@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using Il2Cpp;
 using Il2CppTMPro;
 using IronNestFCS.Logic.FCS;
@@ -114,7 +114,7 @@ public class FcsSceneInteractor {
                 fcs.EnqueueTask(task);
                 SetColor(button, Color.gray);
                 button.GetComponent<Collider>().enabled = false;
-                MelonCoroutines.Start(InvokeDelay(() => {
+                fcs.StartTrackedCoroutine(InvokeDelay(() => {
                     SetColor(button, Color.red);
                     button.GetComponent<Collider>().enabled = true;
                 }, 1f));

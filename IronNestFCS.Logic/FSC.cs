@@ -1,4 +1,4 @@
-﻿using HarmonyInstance = HarmonyLib.Harmony;
+using HarmonyInstance = HarmonyLib.Harmony;
 using System.Collections;
 using System.Linq;
 using System.Reflection;
@@ -300,9 +300,14 @@ public class FSC
     public void Dispose()
     {
         // 停掉所有未完成的协程，否则热重载后旧 ALC 的协程仍会被 Unity 驱动 → 崩溃。
+        // 已自然结束的协程 token 会残留（Unity 内部把 routine 置 null），此时 Stop 抛的
+        // 是 Il2CppException("NullReferenceException: routine is null")，不是裸 NRE——
+        // 按消息过滤忽略（每次热重载必现，非真错误）。
         foreach (var handle in _runningCoroutines) {
+            if (handle == null) continue;
             try { MelonCoroutines.Stop(handle); }
-            catch (NullReferenceException) { /* 协程已自然结束, routine 已失效——忽略 */ }
+            catch (Exception ex) when (ex.Message.Contains("routine is null"))
+            { /* 协程已自然结束, routine 已失效——忽略 */ }
             catch (Exception ex) { MelonLogger.Error($"[FCS] Stop coroutines failed: {ex}"); }
         }
         _runningCoroutines.Clear();
