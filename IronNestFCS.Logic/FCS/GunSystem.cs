@@ -115,11 +115,6 @@ public class GunSystem {
     public string? BulletInChamber() {
         return gunController?.ChamberedShellBlueprint?.shellDefinition?.ShellId?.Replace("PLCM", "PCLM");
     }
-    
-    public bool IsChamberEmpty() {
-        return BulletInChamber() == null;
-    }
-
     private void RefreshBullets() {
         bullets.Clear();
         if (shellSelector == null) return;

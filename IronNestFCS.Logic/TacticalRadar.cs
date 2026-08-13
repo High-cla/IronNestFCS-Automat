@@ -50,10 +50,6 @@ public class TacticalRadar
     public int SweptCount => sweptIds.Count;
 
     public TacticalRadar(FSC fcs) => this.fcs = fcs;
-
-    public bool IsSwept(string entityId) => sweptIds.Contains(entityId);
-    public void MarkSwept(string entityId) => sweptIds.Add(entityId);
-
     public void OnGui()
     {
         var alive = AliveHostiles;

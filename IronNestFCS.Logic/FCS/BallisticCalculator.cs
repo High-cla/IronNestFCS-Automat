@@ -67,11 +67,6 @@ public class BallisticCalculator {
         calculateButton?.OnClickDown();
         yield return new WaitForSeconds(0.5f);
     }
-    
-    public float GetElevation() {
-        return elevationDisplay?.currentNumber ?? 0;
-    }
-
     public static int MinimumCharge(float distance) {
         return distance switch {
             < 5.0f => 1,

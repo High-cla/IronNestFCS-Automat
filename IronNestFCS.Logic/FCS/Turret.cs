@@ -18,22 +18,7 @@ public class Turret {
         _turret = turretObj.GetComponent<TurretController>();
         return true;
     }
-    
-    public IEnumerator SetRotation(float angle) {
-        if (_turret == null) {
-            MelonLogger.Error("[FCS] Aiming: unbound TurretController");
-            yield break;
-        }
-
-        _turret.DesiredRotation = -angle;
-        LastSetAngle = angle;
-        yield return new WaitForSeconds(1f);
-        while (_turret.rotationVelocity != 0) {
-            yield return new WaitForSeconds(1f);
-        }
-    }
-
-    /// <summary>最近一次 SetRotation 的目标角度，同优先级任务按此排序以减少转动</summary>
+    /// <summary>最近一次 SetDesiredRotation 的目标角度，同优先级任务按此排序以减少转动</summary>
     public float LastSetAngle { get; private set; }
 
     /// <summary>非阻塞: 直接设目标方位角, 不等待转完。连续跟踪每帧调用。</summary>

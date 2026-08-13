@@ -124,101 +124,9 @@ public class FSC
             // 驻留装药补给协程:保证装药充足,减少任务内等待购买。
             _runningCoroutines.Add(MelonCoroutines.Start(ReplenishPowderLoop()));
         }
-        // 探针已完成使命，需要时取消注释：
-        // if (IsBound) RunEnemyProbe();
 
         return IsBound;
     }
-
-    /// <summary>
-    /// 深探 FireMission 的 Il2Cpp Dictionary 结构：
-    ///   .Entities → Dictionary&lt;string, MapEntity&gt; (目标数据库)
-    ///   .RunningTimers → Dictionary&lt;string, TimerValue&gt; (CBT 计时器)
-    /// Il2Cpp 的泛型字典与 .NET 标准 Dictionary API 不同，需要探查正确的读取方式。
-    /// </summary>
-    private void RunEnemyProbe()
-    {
-        try
-        {
-            MelonLogger.Msg("[FCS] === MapEntity deep probe ===");
-            var fm = GameObject.Find("Fire Mission Root")?.GetComponent<FireMission>();
-            if (fm == null) { MelonLogger.Msg("[FCS]   no FireMission"); return; }
-
-            var fmType = fm.GetType();
-            var entitiesProp = fmType.GetProperty("Entities", BindingFlags.Public | BindingFlags.Instance);
-            if (entitiesProp == null) { MelonLogger.Msg("[FCS]   no Entities prop"); return; }
-            var entities = entitiesProp.GetValue(fm);
-            if (entities == null) { MelonLogger.Msg("[FCS]   Entities == null"); return; }
-
-            // 获取 Count
-            var countProp = entities.GetType().GetProperty("Count", BindingFlags.Public | BindingFlags.Instance);
-            var total = countProp != null ? (int)countProp.GetValue(entities) : -1;
-            MelonLogger.Msg($"[FCS] Entities.Count = {total}");
-
-            // 通过 Il2Cpp 泛型 GetEnumerator() 枚举前 5 条
-            var getEnum = entities.GetType().GetMethod("GetEnumerator", BindingFlags.Public | BindingFlags.Instance);
-            if (getEnum == null) { MelonLogger.Msg("[FCS]   no GetEnumerator"); return; }
-            var enumerator = getEnum.Invoke(entities, null);
-            if (enumerator == null) { MelonLogger.Msg("[FCS]   GetEnumerator returned null"); return; }
-
-            var enumType = enumerator.GetType();
-            var moveNext = enumType.GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance);
-            var currentProp = enumType.GetProperty("Current", BindingFlags.Public | BindingFlags.Instance);
-            if (moveNext == null || currentProp == null) { MelonLogger.Msg("[FCS]   no MoveNext/Current on enumerator"); return; }
-
-            int shown = 0;
-            while (shown < 5 && (bool)moveNext.Invoke(enumerator, null)!)
-            {
-                var kvp = currentProp.GetValue(enumerator);
-                if (kvp == null) continue;
-
-                var kvpType = kvp.GetType();
-                var keyProp = kvpType.GetProperty("Key", BindingFlags.Public | BindingFlags.Instance);
-                var valueProp = kvpType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
-
-                var key = keyProp?.GetValue(kvp)?.ToString() ?? "?";
-                var mapEntity = valueProp?.GetValue(kvp);
-
-                MelonLogger.Msg($"[FCS] --- Entities['{key}'] ---");
-                if (mapEntity == null) { MelonLogger.Msg("[FCS]   MapEntity = null"); shown++; continue; }
-
-                var meType = mapEntity.GetType();
-                MelonLogger.Msg($"[FCS]   MapEntity type: {meType.FullName}");
-                MelonLogger.Msg($"[FCS]   MapEntity.ToString(): {mapEntity}");
-
-                // Dump MapEntity 所有属性
-                foreach (var p in meType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    if (p.Name is "ObjectClass" or "Pointer" or "WasCollected")
-                        continue;
-                    try
-                    {
-                        var v = p.GetValue(mapEntity);
-                        if (v == null)
-                            MelonLogger.Msg($"[FCS]   .{p.Name} ({p.PropertyType.Name}) = null");
-                        else
-                            MelonLogger.Msg($"[FCS]   .{p.Name} ({p.PropertyType.Name}) = {v}");
-                    }
-                    catch (Exception ex)
-                    {
-                        MelonLogger.Msg($"[FCS]   .{p.Name} ({p.PropertyType.Name}) → {ex.GetType().Name}: {ex.Message}");
-                    }
-                }
-                shown++;
-            }
-            MelonLogger.Msg($"[FCS] === Enumerated {shown} MapEntity entries ===");
-
-            // Dump coordinateRoot: 这是游戏网格坐标 → 地图桌面的映射桥梁
-            DumpCoordinateRoot(fm);
-
-            DumpTimerValue(fm);
-        }
-        catch (Exception ex)
-        {
-            MelonLogger.Warning($"[FCS] MapEntity probe failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-        }
-    }
-
     private static void DumpCoordinateRoot(FireMission fm)
     {
         try
@@ -434,17 +342,6 @@ public class FSC
             }
         }
     }
-
-    public IEnumerator ExposeAllEntities() {
-        while (true) {
-            foreach (var m in MapTable.GetAllFireMissionEntities()) {
-                m.GetComponent<Image>().enabled = true;
-            }
-
-            yield return new WaitForSeconds(1f);
-        }
-    }
-
     /// <summary>
     /// 把任务加入调度队列。用户不指定炮管——调度器自动派给空闲炮管。
     /// 入队后立即尝试派发；若两管炮都忙，任务留在队列里，等某管炮打完自动拉取。
@@ -475,17 +372,6 @@ public class FSC
         BulletType.HE => BulletType.HCHE,
         _ => t
     };
-
-    /// <summary>插队：任务放到队列最前面，用于高优先级目标</summary>
-    public void EnqueueTaskFront(ArtilleryTask task) {
-        task.progress = Progress.Pending;
-        var existing = _taskQueue.ToArray();
-        _taskQueue.Clear();
-        _taskQueue.Enqueue(task);
-        foreach (var t in existing) _taskQueue.Enqueue(t);
-        TryDispatch();
-    }
-
     /// <summary>把队首任务派给空闲炮管，直到没有空闲炮管或队列空。</summary>
     private void TryDispatch() {
         while (_taskQueue.Count > 0) {
