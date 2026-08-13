@@ -8,7 +8,7 @@
         <AssemblyName>IronNestFCS</AssemblyName>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <!-- 游戏目录根，集中管理所有 HintPath -->
-        <GameDir>F:\SteamLibrary\steamapps\common\Iron Nest Heavy Turret Simulator</GameDir>
+        <GameDir>D:\steam\steamapps\common\Iron Nest Heavy Turret Simulator</GameDir>
     </PropertyGroup>
 
     <ItemGroup>

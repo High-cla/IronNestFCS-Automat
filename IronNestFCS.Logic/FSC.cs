@@ -64,7 +64,8 @@ public class FSC
 
     // 连续瞄准几何缓存(Draggable Surface + turret), 避免每帧 GameObject.Find
     private Transform? _mapSurface;
-    private Transform? _turretXf;
+    /// <summary>真实炮塔地图局部坐标(TurretLocation, 不可拖动), CacheAimGeometry 时缓存</summary>
+    private Vector3 _turretLocal;
 
     /// <summary>手动任务目标解析器(FcsModule 创建雷达后注入)</summary>
     public TacticalRadar? EntityLocator { get; set; }
@@ -806,20 +807,20 @@ public class FSC
     /// <summary>缓存地图面 + turret 引用（一次, TryBind 时调用）。避免每帧 GameObject.Find。</summary>
     private void CacheAimGeometry() {
         _mapSurface = GameObject.Find("Draggable Surface")?.transform;
-        _turretXf = MapTable.Turret;
+        _turretLocal = MapTable.GetTurretLocal();
     }
 
     /// <summary>世界坐标 → 距离 km（与 TacticalRadar.CalcDistance 同换算）</summary>
     private float DistKm(Vector3 worldPos) {
-        if (_mapSurface == null || _turretXf == null) return 0f;
-        var target = _mapSurface.InverseTransformPoint(worldPos) - _turretXf.localPosition;
+        if (_mapSurface == null) return 0f;
+        var target = _mapSurface.InverseTransformPoint(worldPos) - _turretLocal;
         return target.magnitude * 3.8164f;
     }
 
     /// <summary>世界坐标 → 方位角（与 TacticalRadar.CalcAngle 同逻辑）</summary>
     private float Bearing(Vector3 worldPos) {
-        if (_mapSurface == null || _turretXf == null) return 0f;
-        var target = _mapSurface.InverseTransformPoint(worldPos) - _turretXf.localPosition;
+        if (_mapSurface == null) return 0f;
+        var target = _mapSurface.InverseTransformPoint(worldPos) - _turretLocal;
         var angle = Vector3.SignedAngle(target, Vector3.up, Vector3.forward);
         return angle < 0 ? angle + 360f : angle;
     }

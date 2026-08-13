@@ -35,6 +35,9 @@ public class TacticalRadar
     private readonly Dictionary<string, Queue<(Vector3 pos, float time)>> moveHistory = new();
     private const int MoveHistorySize = 4;
 
+    // 强制可见日志去重（VisibilityGroup.alpha=1 仅记录一次，防刷屏）
+    private readonly HashSet<string> _forcedVisibleLog = new();
+
     // 缓存的 FireMission 引用（按 F9 重载后失效，Scan 内自动刷新）
     private FireMission? _cachedFm;
     private PropertyInfo? _entitiesProp;
@@ -79,7 +82,7 @@ public class TacticalRadar
             if (IsAlly(me) && IsAlive(me) && TryGetWorldPos(me, out var allyPos))
                 AllyPositions.Add(allyPos);
             var t = BuildTargetInfo(key, me);
-            if (t != null) targets.Add(t.Value);
+            if (t != null) { ForceVisible(key, me); targets.Add(t.Value); }
         });
 
         // 击杀确认: 死亡目标的登记立即解除(打中的目标下轮扫描恢复可拣)
@@ -139,6 +142,32 @@ public class TacticalRadar
     {
         var aliveProp = me.GetType().GetProperty("IsAlive", BindingFlags.Public | BindingFlags.Instance);
         return aliveProp?.GetValue(me) is bool b && b;
+    }
+
+    /// <summary>强制敌人可见: me.Location.VisibilityGroup.alpha=1。尽力而为——属性链任一环节为 null 静默跳过。</summary>
+    private void ForceVisible(string entityId, object me)
+    {
+        var locProp = me.GetType().GetProperty("Location", BindingFlags.Public | BindingFlags.Instance);
+        var location = locProp?.GetValue(me);
+        if (location == null) return;
+
+        var vgProp = location.GetType().GetProperty("VisibilityGroup", BindingFlags.Public | BindingFlags.Instance);
+        var vg = vgProp?.GetValue(location);
+        if (vg == null) return;
+
+        var alphaProp = vg.GetType().GetProperty("alpha", BindingFlags.Public | BindingFlags.Instance);
+        if (alphaProp?.GetValue(vg) is float alpha && alpha < 0.5f)
+        {
+            alphaProp.SetValue(vg, 1f);
+            if (_forcedVisibleLog.Add(entityId))
+                MelonLogger.Msg($"[Radar] 强制可见 {entityId} (VisibilityGroup.alpha→1)");
+        }
+    }
+
+    /// <summary>强制所有实体可见（仅可见性 hack，不扫描/不占标记/不改缓存）。手动模式雷达休眠时也调用，保证敌人始终可见。</summary>
+    public void ForceAllVisible()
+    {
+        ForEachEntity((key, me) => ForceVisible(key, me));
     }
 
     private static int GetRole(object me)
@@ -401,25 +430,27 @@ public class TacticalRadar
 
     // ─── 坐标计算（世界坐标 → 地图坐标系）───
 
+    /// <summary>真实炮塔坐标 — TurretLocation 固定子物体（Player Turret Piece 可拖动仅回退）</summary>
     private float CalcAngle(Vector3 worldPos)
     {
         var mapSurface = GameObject.Find("Draggable Surface")?.transform;
-        var turret = fcs.MapTable.Turret;
-        if (mapSurface == null || turret == null) return 0f;
+        if (mapSurface == null) return 0f;
         var localPos = mapSurface.InverseTransformPoint(worldPos);
-        var target = localPos - turret.localPosition;
+        var turretLocal = fcs.MapTable.GetTurretLocal();
+        var target = localPos - turretLocal;
         var angle = Vector3.SignedAngle(target, Vector3.up, Vector3.forward);
         if (angle < 0) angle += 360;
         return angle;
     }
 
+    /// <summary>真实炮塔坐标 — TurretLocation 固定子物体（Player Turret Piece 可拖动仅回退）</summary>
     private float CalcDistance(Vector3 worldPos)
     {
         var mapSurface = GameObject.Find("Draggable Surface")?.transform;
-        var turret = fcs.MapTable.Turret;
-        if (mapSurface == null || turret == null) return 0f;
+        if (mapSurface == null) return 0f;
         var localPos = mapSurface.InverseTransformPoint(worldPos);
-        var target = localPos - turret.localPosition;
+        var turretLocal = fcs.MapTable.GetTurretLocal();
+        var target = localPos - turretLocal;
         return target.magnitude * 3.8164f;
     }
 }
