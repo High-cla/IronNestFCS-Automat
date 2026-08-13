@@ -1,3 +1,4 @@
+using System.Linq;
 using MelonLoader;
 using UnityEngine;
 
@@ -43,7 +44,9 @@ public sealed class TargetRegistry
         public bool IsExpired => Fired && Time.time - FiredAt > FlightWindow;
     }
 
-    /// <summary>登记目标。自动任务在派发时调用; 手动任务在入队时调用(队列存活不被清)。幂等。</summary>
+    /// <summary>登记目标。自动任务在派发时调用; 手动任务在入队时调用(队列存活不被清)。幂等。
+    /// 集群任务派发即登记覆盖成员——装填期+在飞期全程实体屏蔽: 移动成员会移出落点覆盖半径,
+    /// 几何屏蔽(IsHandledNear)拦不住, 不按实体登记会在装填期被雷达重复派发(同目标双任务)。</summary>
     public void Commit(ArtilleryTask task)
     {
         if (task.entityId is { Length: > 0 } id)
@@ -55,6 +58,7 @@ public sealed class TargetRegistry
             e.Radius = task.BlastRadiusKm > 0f ? ShellData.KmToWorld(task.BlastRadiusKm) : DefaultCommitRadiusWorld;
             _positions.Add(e);
         }
+        if (task.ClusterMembers is { Count: > 0 }) CommitMembers(task, task.ClusterMembers);
     }
 
     /// <summary>击发后调用: 启动飞行窗口计时。</summary>
@@ -63,8 +67,8 @@ public sealed class TargetRegistry
         if (Find(task) is { } e) { e.Fired = true; e.FiredAt = Time.time; }
     }
 
-    /// <summary>击发时按实体登记移动集群覆盖成员: 在飞屏蔽与爆区几何无关(列车在落点后方,
-    /// 几何半径兜不住)。死亡由 Reconcile 解除, 未击发任务结束由 Release 一并清理。幂等。</summary>
+    /// <summary>按实体登记移动集群覆盖成员(派发时由 Commit 调用): 在飞屏蔽与爆区几何无关
+    /// (列车在落点后方, 几何半径兜不住)。死亡由 Reconcile 解除, 任务结束由 Release 一并清理。幂等。</summary>
     public void CommitMembers(ArtilleryTask task, IEnumerable<string> ids)
     {
         foreach (var id in ids)
@@ -94,13 +98,14 @@ public sealed class TargetRegistry
         MarkFired(task);   // 同步 entityId 条目(单点任务), 幂等
     }
 
-    /// <summary>任务结束(未击发)时解除登记。幂等。</summary>
+    /// <summary>任务结束(未击发)时解除登记。幂等。
+    /// 任务可能登记多个条目(entityId 单点 / 集群位置 / 集群成员)——全部解除,
+    /// 否则成员条目 Fired=false 永不过期 → 任务结束后成员被永久屏蔽。</summary>
     public void Release(ArtilleryTask task)
     {
-        var e = Find(task);
-        if (e == null) return;
-        if (e.EntityId is { Length: > 0 } id) _byEntity.Remove(id);
-        else _positions.Remove(e);
+        foreach (var key in _byEntity.Where(kv => kv.Value.Owner == task).Select(kv => kv.Key).ToList())
+            _byEntity.Remove(key);
+        _positions.RemoveAll(p => p.Owner == task);
     }
 
     /// <summary>该目标是否已被承包(在飞/排队/炮上)。过期条目懒清理。</summary>

@@ -666,7 +666,17 @@ public class FSC
             // 移动目标走提前量(冻结快照外推); 静态退化为恒定 aim（同一循环, 无分类边界）。
             // 后台协程停止驱动方位, 主流程接管。
             turret.PostLoad = true;
+            // 击发串行化门(6bf05e9 回归修复): 全局扳机 Fire() 击发所有臂杆已拉下的炮管,
+            // 两管任务同时进击发段 = 双管齐射。锁由后台持有到击发完成(ReleaseTurretOnce)。
+            // 仰角杆每管独立——等锁期间照样追仰角(与另一管并行), 只有方位/击发段被锁串行化。
             task.progress = Progress.Aiming;
+            while (!turret.Acquired) {
+                TryComputeAimTargets(task, out _, out var elev);
+                gunSys.SetElevationTarget(elev);
+                yield return null;
+            }
+            turret.Aiming = true;   // 主流程接管方位(后台停止驱动)
+            MelonLogger.Msg($"[FCS] {leftRight} 炮塔锁已持有, 进入瞄准/击发段");
             var aimTrackStart = Time.time;
             while (true) {
                 TryComputeAimTargets(task, out var bearingTarget, out var elevTarget);
@@ -730,7 +740,7 @@ public class FSC
                 task.Fired = true;
                 task.FiredAt = Time.time;
                 Registry.MarkFiredBlast(task, impactPos, blastKm);
-                if (task.ClusterMembers is { Count: > 0 }) Registry.CommitMembers(task, task.ClusterMembers);
+                // 集群成员派发时已登记(Commit), 击发无需再登记
                 InFlight.Add(task);   // 面板倒计时从这里开始, 归零(估计落地)时移除
             }
             finally {
@@ -770,7 +780,8 @@ public class FSC
     /// </summary>
     private sealed class TurretReservation {
         public bool Acquired;   // 已拿到炮塔锁
-        public bool PostLoad;   // 装填完成: 主流程接管驱动(后台停止)
+        public bool PostLoad;   // 装填完成(语义保留: 主流程接管时机)
+        public bool Aiming;     // 主流程已拿到锁接管方位驱动(后台停止)
         public bool Canceled;   // 主流程已放弃本次预约
         public bool Released;   // 锁已归还（防重复 Release）
     }
@@ -788,7 +799,8 @@ public class FSC
             yield break;
         }
         while (!res.Released) {
-            if (!res.PostLoad && TryGetMovingBearing(task, out var bearing))
+            // 主流程未接管前持续追方位(装填期+等锁期); 拿到锁接管后(Aiming)停止。
+            if (!res.Aiming && TryGetMovingBearing(task, out var bearing))
                 Turret.SetDesiredRotation(bearing);
             yield return null;
         }
