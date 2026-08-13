@@ -27,7 +27,7 @@ public static class AphcheDeck
     /// 等待 PunchcardRuntime 就绪 → 幂等检查 → 复制 APShell 卡改造为 APHE 并注入。
     /// 素材缺失（找不到 APShell/HCHEShell）时打警告并安全退出。
     /// </summary>
-    public static IEnumerator AddCardIfMissing()
+    public static IEnumerator AddCardIfMissing(PurchaseDeck deck)
     {
         // 等 Requisition Console 的卡组加载完成
         while (Object.FindObjectsOfType<PunchcardRuntime>().Count == 0)
@@ -37,6 +37,8 @@ public static class AphcheDeck
         foreach (var obj in objs) {
             if (obj.CurrentDefinition.ID == CardId) {
                 MelonLogger.Msg("[FCS] AphcheDeck: 卡已存在, 跳过注入");
+                // 兜底: 确保采购槽位已注册(热重载后 TryBind 可能早于注入)
+                deck.RegisterCard(BulletType.APHE, obj.transform);
                 yield break;
             }
         }
@@ -93,5 +95,14 @@ public static class AphcheDeck
         list.Add(newDef);
         Object.FindFirstObjectByType<RequisitionConsoleManager>().AddNewCardsToDeck(list);
         MelonLogger.Msg("[FCS] AphcheDeck: 已注入 APHE 卡 (APShellMod)");
+
+        // 注入后注册采购槽位: TryBind 枚举卡组时卡还不存在, 必须动态补注册
+        yield return null; // 等新卡实例化
+        foreach (var card in Object.FindObjectsOfType<PunchcardRuntime>()) {
+            if (card.CurrentDefinition.ID == CardId) {
+                deck.RegisterCard(BulletType.APHE, card.transform);
+                break;
+            }
+        }
     }
 }

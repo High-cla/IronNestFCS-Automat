@@ -384,6 +384,7 @@ public class FSC
         // 停掉所有未完成的协程，否则热重载后旧 ALC 的协程仍会被 Unity 驱动 → 崩溃。
         foreach (var handle in _runningCoroutines) {
             try { MelonCoroutines.Stop(handle); }
+            catch (NullReferenceException) { /* 协程已自然结束, routine 已失效——忽略 */ }
             catch (Exception ex) { MelonLogger.Error($"[FCS] Stop coroutines failed: {ex}"); }
         }
         _runningCoroutines.Clear();

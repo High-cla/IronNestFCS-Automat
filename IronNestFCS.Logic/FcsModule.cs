@@ -30,7 +30,7 @@ public class FcsModule : IFcsModule
         bool bound = fcs.TryBind();
         // APHE 特殊复合弹卡: 每局注入(幂等)。等 PunchcardRuntime 就绪, 由 AphcheDeck 内部轮询。
         // 所有场景都试注入, 找不到 Requisition Console 的素材卡时会安全退出。
-        fcs.StartTrackedCoroutine(AphcheDeck.AddCardIfMissing());
+        fcs.StartTrackedCoroutine(AphcheDeck.AddCardIfMissing(fcs.PurchaseDeck));
         return bound;
     }
 
