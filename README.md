@@ -25,9 +25,10 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 | 炮塔旋转 | 后台协程抢 `_turretLock`，**旋转全程独占座圈**，另一管排队等 | **旋转全程锁外并行**——双管同时转方位，仅击发瞬间串行（防双管齐射） |
 | 同方位齐射 | 无，持锁者专权，一管击发时另一管只能等 | **齐射门**：两管目标方位差 ≤0.1°（移动目标限同实体）放行双弹齐射，如 AP+HE 同目标同时出膛 |
 | 装填期旋转 | 装填期间不转方位 | **装填期立即转**——静态目标提前到位，触发提前 + 全速旋转（不每帧重写目标干扰速度平滑） |
-| 射击基准 | `Player Turret Piece`（可拖动标记，会随拖动漂移） | **真实炮塔坐标**（`TurretLocation`）+ **每 5s 刷新自愈**（场景晚就绪/紧急拖动后自动校正） |
+| 射击基准 | `Player Turret Piece`（可拖动标记，会随拖动漂移） | **铁巢坐标自动更新**——真实炮塔基准（`TurretLocation`）+ **每 5s 刷新自愈**（场景晚就绪/紧急拖动后自动校正） |
+| APHE 复合弹卡 | 无 | **每局自动注入 `APShellMod` 卡**（ImpactRadius=1 / Damage=5 / BlastRadius=0.5km / Cost=5），并入现有 APHE 枚举，幂等跳过已存在 |
 | 击发确认 | 5 个确认台顺序点击（就位→发射窗口长） | **确认与臂杆并行**——臂杆按下期间 0.01s 连点全部确认，就位→发射窗口 ~2.2s→~1.2s |
-| 敌人可见 | 依赖视野/探测 | **强制可见**（Radar hack），扫描不依赖视野 |
+| 敌人可见 | 依赖视野/探测 | **强制可见**：`VisibilityGroup.alpha→1` + `State` 0x80 清除，扫描不依赖视野 |
 | 死代码 | — | 移除 ~209 行（`GameStateWatcher` 整类等） |
 
 ### 核心功能
@@ -139,9 +140,10 @@ Deep-fork of [svr2kos2](https://github.com/svr2kos2)'s original FCS (evolved via
 | Turret rotation | Background coroutine grabs `_turretLock` — **rotation holds the shared traverse exclusively**, the other gun queues | **Rotation runs outside the lock** — both guns traverse in parallel; only the firing instant serializes (prevents accidental volley) |
 | Same-bearing salvo | None — lock-holder fires alone, other gun waits | **Salvo gate**: when both guns' target bearings differ ≤0.1° (moving targets: same entity only), both fire together — e.g. AP+HE on one target leave the barrels simultaneously |
 | Rotation during loading | Traverse not moved while loading | **Rotates immediately during loading** — static targets pre-aim early; full-speed rotation (no per-frame target rewrite disturbing speed smoothing) |
-| Aim reference | `Player Turret Piece` (draggable marker, drifts) | **Real turret coordinates** (`TurretLocation`) + **self-healing 5s refresh** (late scene init / emergency drag auto-corrects) |
+| Aim reference | `Player Turret Piece` (draggable marker, drifts) | **Auto-updated iron-nest coordinates** — real turret base (`TurretLocation`) + **self-healing 5s refresh** (late scene init / emergency drag auto-corrects) |
+| APHE composite shell card | None | **`APShellMod` card auto-injected each match** (ImpactRadius=1 / Damage=5 / BlastRadius=0.5km / Cost=5), merged into the existing APHE enum, idempotent skip |
 | Fire confirmation | 5 confirmation panels clicked sequentially (long ready-to-fire window) | **Confirmations parallel with arming** — all 5 tapped at 0.01s while the arming lever is held; ready-to-fire window ~2.2s → ~1.2s |
-| Enemy visibility | Relies on sighting/detection | **Force-visible radar hack**, sweep independent of line of sight |
+| Enemy visibility | Relies on sighting/detection | **Force-visible**: `VisibilityGroup.alpha→1` + `State` 0x80 cleared, sweep independent of line of sight |
 | Dead code | — | ~209 lines removed (`GameStateWatcher` class etc.) |
 
 ### Core Features
