@@ -10,9 +10,9 @@ using Object = UnityEngine.Object;
 namespace IronNestFCS.Logic.FCS;
 
 /// <summary>
-/// APHCHE 特殊复合弹卡：每局向 Requisition Console 注入一张 APShellMod 卡（复制 APShell + 借 HCHEShell 特效）。
+/// APHE 特殊复合弹卡：每局向 Requisition Console 注入一张 APShellMod 卡（复制 APShell + 借 HCHEShell 特效）。
 /// 幂等：场景中已存在 APShellMod 卡则跳过。由 FcsModule.Initialize 通过 StartTrackedCoroutine 启动。
-/// 属性（用户确认）：ImpactRadius=1, Damage=5, ShellId=APHCHE, Cost=5。
+/// 属性（用户确认）：ImpactRadius=1, Damage=5, ShellId=APHE, Cost=5。
 /// </summary>
 public static class AphcheDeck
 {
@@ -24,7 +24,7 @@ public static class AphcheDeck
     public const int ShellDamage = 5;
 
     /// <summary>
-    /// 等待 PunchcardRuntime 就绪 → 幂等检查 → 复制 APShell 卡改造为 APHCHE 并注入。
+    /// 等待 PunchcardRuntime 就绪 → 幂等检查 → 复制 APShell 卡改造为 APHE 并注入。
     /// 素材缺失（找不到 APShell/HCHEShell）时打警告并安全退出。
     /// </summary>
     public static IEnumerator AddCardIfMissing()
@@ -54,7 +54,7 @@ public static class AphcheDeck
         }
 
         var newDef = Object.Instantiate<PunchcardDefinitionV2>(apDef);
-        newDef.Cost = ShellData.Cost(BulletType.APHCHE); // 5 (用户确认)
+        newDef.Cost = ShellData.Cost(BulletType.APHE); // 5 (用户确认)
 
         // 复制节点图; PunchcardGraph 是 NodeGraph 的 Il2Cpp 派生
         newDef.Graph = ((NodeGraph)apDef.Graph).Copy().TryCast<PunchcardGraph>();
@@ -65,11 +65,11 @@ public static class AphcheDeck
             var addShell = nodes[i].TryCast<State_AddShell>();
             if (addShell == null) continue;
 
-            // 复制 ShellDefinition 并覆盖为 APHCHE 属性
+            // 复制 ShellDefinition 并覆盖为 APHE 属性
             var shelldef = Object.Instantiate<ShellDefinition>(addShell.Shell);
             shelldef.ImpactRadius = ImpactRadius;
             shelldef.Damage = ShellDamage;
-            shelldef.ShellId = "APHCHE";
+            shelldef.ShellId = "APHE";
             addShell.Shell = shelldef;
 
             // 借 HCHEShell 的爆炸特效预制体
@@ -86,12 +86,12 @@ public static class AphcheDeck
         }
 
         newDef.ID = CardId;
-        newDef.Title = new TextIdentifier("APHCHE Shell");
+        newDef.Title = new TextIdentifier("APHE Shell");
         newDef.Description = new TextIdentifier("Get 1 hardened bunker-piercing high-capacity bursting charge shell.");
 
         var list = new Il2CppSystem.Collections.Generic.List<PunchcardDefinitionV2>();
         list.Add(newDef);
         Object.FindFirstObjectByType<RequisitionConsoleManager>().AddNewCardsToDeck(list);
-        MelonLogger.Msg("[FCS] AphcheDeck: 已注入 APHCHE 卡 (APShellMod)");
+        MelonLogger.Msg("[FCS] AphcheDeck: 已注入 APHE 卡 (APShellMod)");
     }
 }

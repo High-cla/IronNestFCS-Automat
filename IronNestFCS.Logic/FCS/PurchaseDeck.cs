@@ -17,9 +17,9 @@ public class PurchaseDeck {
         var cards = requisitionConsole.GetComponentsInChildren<PunchcardRuntime>();
         foreach (var card in cards) {
             MelonLogger.Msg($"[FCS] PurchaseDeck: Found card {card.CurrentDefinition.ID}");
-            // APHCHE 特殊卡: 由 AphcheDeck 每局注入, ID="APShellMod", 不能靠 Replace 后 TryParse 命中
+            // APHE 特殊卡: 由 AphcheDeck 每局注入, ID="APShellMod", 不能靠 Replace 后 TryParse 命中
             if (card.CurrentDefinition.ID == AphcheDeck.CardId) {
-                bulletCards[BulletType.APHCHE] = card.transform;
+                bulletCards[BulletType.APHE] = card.transform;
                 continue;
             }
             if (TryParse(

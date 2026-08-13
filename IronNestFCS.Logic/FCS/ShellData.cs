@@ -24,7 +24,7 @@ public static class ShellData
         BulletType.HE => 0.12f,
         BulletType.HCHE => 0.30f,
         BulletType.LE => 0.08f,   // 轻弹, 单点用; 半径与 AP 相同(用户确认)
-        BulletType.APHCHE => 0.5f, // 特殊复合弹(用户确认)
+        BulletType.APHE => 0.5f, // 特殊复合弹(用户确认)
         _ => 0f
     };
 
@@ -35,18 +35,18 @@ public static class ShellData
         BulletType.HE => 0.27f,
         BulletType.HCHE => 0.63f,
         BulletType.LE => 0.14f,   // 与 AP 相同(用户确认)
-        BulletType.APHCHE => 1.0f, // 特殊复合弹(用户确认)
+        BulletType.APHE => 1.0f, // 特殊复合弹(用户确认)
         _ => 0f
     };
 
     /// <summary>友军禁区半径 = 杀伤包络 + 20% 余量(不赌包络边缘)</summary>
     public static float FriendlySafeRadiusKm(BulletType t) => DamageRadiusKm(t) * 1.2f;
 
-    /// <summary>成本(申请点)。正式版: AP/HE=10, HCHE=18; APHCHE=5(用户确认)。</summary>
+    /// <summary>成本(申请点)。正式版: AP/HE=10, HCHE=18; APHE=5(用户确认)。</summary>
     public static int Cost(BulletType t) => t switch
     {
         BulletType.HCHE => 18,
-        BulletType.APHCHE => 5, // 特殊复合弹(用户确认)
+        BulletType.APHE => 5, // 特殊复合弹(用户确认)
         _ => 10
     };
 }

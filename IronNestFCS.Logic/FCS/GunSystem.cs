@@ -28,7 +28,6 @@ public enum BulletType {
     TEAR = 18,
     THRM = 19,
     WP = 20,
-    APHCHE = 21, // 特殊复合弹: 穿透+高爆 (由 AphcheDeck 每局注入的 APShellMod 卡提供)
 }
 
 public class GunSystem {
