@@ -1,10 +1,8 @@
 using System.Collections;
 using Il2Cpp;
-using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppLocalisation;
 using Il2CppSleepyNodes;
 using MelonLoader;
-using UnityEngine;
 using Object = UnityEngine.Object;
 
 namespace IronNestFCS.Logic.FCS;
@@ -61,6 +59,10 @@ public static class AphcheDeck
         // 复制节点图; PunchcardGraph 是 NodeGraph 的 Il2Cpp 派生
         newDef.Graph = ((NodeGraph)apDef.Graph).Copy().TryCast<PunchcardGraph>();
 
+        if (newDef.Graph == null) {
+            MelonLogger.Error("[FCS] AphcheDeck: PunchcardGraph 复制失败");
+            yield break;
+        }
         var nodes = ((NodeGraph)newDef.Graph).nodes;
         for (int i = 0; i < nodes.Count; i++) {
             if (!nodes[i].name.Contains("State_Add Shell")) continue;

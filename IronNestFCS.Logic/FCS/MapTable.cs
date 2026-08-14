@@ -6,7 +6,7 @@ namespace IronNestFCS.Logic.FCS;
 
 public class MapTable {
     private Transform? turret;
-    private Dictionary<int, Transform> artilleries;
+    private Dictionary<int, Transform> artilleries = new();
     private Transform? fireMissionRoot;
     private FireMission? fireMission;
     private Transform? mapSurface;

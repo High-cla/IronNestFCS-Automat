@@ -41,7 +41,7 @@ public class FcsSceneInteractor {
         foreach (BulletType type in Enum.GetValues(typeof(BulletType))) {
             BulletType captured = type;
             // 先声明再赋值：lambda 要捕获 button，不能在其声明表达式内部引用它。
-            GameObject button = null;
+            GameObject button = null!;
             button = AddButton(() => {
                 selectedBulletType = captured;
                 foreach (var btn in bulletTypeBtns) {
@@ -69,7 +69,7 @@ public class FcsSceneInteractor {
         var x = 0.8f;
         var y = -0.65f;
 
-        GameObject? autoFireButton = null;
+        GameObject autoFireButton = null!;
         autoFireButton = AddButton(() => {
             AutoFire = !AutoFire;
             SetColor(autoFireButton, AutoFire ? Color.red : Color.white);
@@ -84,7 +84,7 @@ public class FcsSceneInteractor {
         x -= 0.05f;
         y -= 0.0045f;
 
-        GameObject maxChargeButton = null;
+        GameObject maxChargeButton = null!;
         maxChargeButton = AddButton(() => {
             maxCharge = !maxCharge;
             SetColor(maxChargeButton, maxCharge ? Color.red : Color.white);
@@ -101,7 +101,7 @@ public class FcsSceneInteractor {
 
         for (var i = 1; i <= 4; i++) {
             var targetId = i;
-            GameObject button = null;
+            GameObject button = null!;
             button = AddButton(() => {
                 var task = fcs.MapTable.GetMarkTarget(targetId);
                 if (task == null) {

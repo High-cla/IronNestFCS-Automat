@@ -47,7 +47,7 @@ public class GunSystem {
     private LinearSliderInteractable? elevationLever;
     private OdometerDisplay? remainingCharges;
 
-    private TextMeshPro shellId;
+    private TextMeshPro? shellId;
 
     public bool TryBind(string surfix) {
         this._surfix = surfix;
@@ -245,7 +245,7 @@ public class GunSystem {
     public bool IsPendingReload() => gunController != null && gunController.pendingReload;
 
     public int RemainingCharges() {
-        return (int)remainingCharges.CurrentNumber;
+        return remainingCharges != null ? (int)remainingCharges.CurrentNumber : 0;
     }
 
 }

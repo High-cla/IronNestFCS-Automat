@@ -98,7 +98,7 @@ IronNestFCS-Automat/
 ## COMMANDS
 
 ```bash
-# 构建（0 错 12-14 警告存量；GameDir 在 csproj 已指向本机 D:\steam）
+# 构建（0 错 0 警告；GameDir 在 csproj 已指向本机 D:\steam）
 dotnet build IronNestFCS.sln
 
 # 热重载：build 后切回游戏按 F9（无需重启）

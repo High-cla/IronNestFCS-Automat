@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Il2Cpp;
 using IronNestFCS.Abstractions;
 using IronNestFCS.Logic.FCS;
@@ -98,6 +97,7 @@ public class FcsModule : IFcsModule
     /// </summary>
     private TacticalDecider.TargetInfo? PickTarget()
     {
+        if (radar == null) return null;
         foreach (var t in radar.AliveHostiles)
         {
             if (fcs.Registry.IsHandled(t.EntityId)) continue;

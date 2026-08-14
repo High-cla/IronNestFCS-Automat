@@ -1,6 +1,4 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Reflection;
 using Il2Cpp;
 using IronNestFCS.Logic.FCS;
@@ -164,7 +162,7 @@ public class TacticalRadar
         // State 隐藏位(0x80=MapEntityStates 隐藏)清除——地图上不可见的另一机制
         var stateProp = me.GetType().GetProperty("State", BindingFlags.Public | BindingFlags.Instance);
         var stateVal = stateProp?.GetValue(me);
-        if (stateVal != null && (Convert.ToInt32(stateVal) & 0x80) != 0)
+        if (stateProp != null && stateVal != null && (Convert.ToInt32(stateVal) & 0x80) != 0)
         {
             int stateNum = Convert.ToInt32(stateVal) & ~0x80;
             var statesType = me.GetType().Assembly.GetType("MapEntityStates")
