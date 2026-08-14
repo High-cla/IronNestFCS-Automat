@@ -1,14 +1,10 @@
 using HarmonyInstance = HarmonyLib.Harmony;
 using System.Collections;
-using System.Linq;
 using System.Reflection;
 using Il2Cpp;
 using IronNestFCS.Logic.FCS;
 using MelonLoader;
 using UnityEngine;
-using UnityEngine.InputSystem;
-using UnityEngine.UI;
-using Object = UnityEngine.Object;
 
 namespace IronNestFCS.Logic;
 
@@ -57,8 +53,9 @@ public class FSC
     public readonly List<ArtilleryTask> InFlight = new();
 
     /// <summary>机构就绪容差(度): 双机构与 aim 差小于此值且 CanFire 才进入确认。
-    /// 1° 已够——毁伤半径兜底(10km 处 1° ≈ 175m), 高装药压低漂移率(~0.3°/s)保证收敛。</summary>
-    private const float AimToleranceDeg = 1f;
+    /// 0.1°——1°@10km≈175m 已超 HE 致死半径(120m), "对准"可能是打偏; 0.1°@10km≈17.5m
+    /// 远小于任何毁伤半径。机构 4°/s、漂移 ~0.3°/s, 收敛有余量。与齐射门容差一致。</summary>
+    private const float AimToleranceDeg = 0.1f;
     /// <summary>移动任务装药预测: 额外覆盖装填时长不确定性的距离余量(km)</summary>
     private const float MovingDistanceMarginKm = 1.5f;
     /// <summary>齐射方位容差(度): 两管目标方位差小于此值视为同方向, 放行双管齐射(玩家拉一次扳机=双弹)。
@@ -257,7 +254,9 @@ public class FSC
                 BindingFlags.Public | BindingFlags.Instance);
             if (countProp == null) return (false, "no Count prop");
 
-            var count = (int)countProp.GetValue(timers);
+            var countObj = countProp.GetValue(timers);
+            if (countObj == null) return (false, "no Count value");
+            var count = (int)countObj;
             if (count == 0) return (false, "0 timers");
 
             // 读 Keys，拼接键名
@@ -593,11 +592,19 @@ public class FSC
                         yield break;
                     }
                 }
-                Turret.SetDesiredRotation(bearingTarget);
+                // 先来后到: 锁被另一管击发段占有时让舵(停止写共享炮塔方位), 只追仰角(每管独立);
+                // 锁释放后恢复追方位。等锁期间重置超时计时——等待不算"追不上"。
+                var canDriveBearing = turret.Acquired || !_turretLock.IsHeld;
+                if (canDriveBearing) {
+                    Turret.SetDesiredRotation(bearingTarget);
+                } else {
+                    aimTrackStart = Time.time;
+                }
                 gunSys.SetElevationTarget(elevTarget);
                 // 收敛判定对"当前帧目标值"比较（移动时 aim 每帧漂移, 机构追上即收敛）
+                // 让舵期间只判仰角（方位由持锁者独占, 锁释放后转到位再判）
                 if (gunSys.ElevationError(elevTarget) < AimToleranceDeg
-                    && Turret.AngleError(bearingTarget) < AimToleranceDeg
+                    && (!canDriveBearing || Turret.AngleError(bearingTarget) < AimToleranceDeg)
                     && gunSys.CanFire())
                     break;
                 // 兜底: 时间制(帧数在 60fps 下只有 1/60 秒/次, 帧数会误杀 32s 仰角摆动)
@@ -606,7 +613,8 @@ public class FSC
             }
 
             // ===== 击发串行化门 + 同方位齐射门 =====
-            // 全局扳机 Fire() 击发所有臂杆已拉下的炮管。锁只在击发段前抢——旋转全程并行, 此处串行击发。
+            // 全局扳机 Fire() 击发所有臂杆已拉下的炮管。锁在击发段前抢——旋转锁外并行但先来后到:
+            // 锁被他人持有时让舵(停止写方位), 持锁者独占复检/击发, 此处串行击发。
             // 同方位齐射门: 另一管与本管目标方位差 ≤ 容差 → 放行双管齐射(两管都武装, 持锁者 Fire 全局带出双弹,
             // 玩家拉一次扳机 = 双弹, 如 AP+HE 同目标)。异方位仍等锁串行——座圈单方位角, 齐射必一发偏。
             // 移动目标只放行同实体(异实体同方位会随时间发散 → 两管收敛循环抢舵)。
@@ -658,7 +666,8 @@ public class FSC
                     // 持锁者瞄准失败放弃(释放锁) → 自己 TryAcquire 兜底抢锁, 防 AutoFire 下永久挂起。
                     while (!gunSys.IsPendingReload() && !TryAcquireTurret(turret)) {
                         TryComputeAimTargets(task, out var b, out var e);
-                        Turret.SetDesiredRotation(b);
+                        // 先来后到: 持锁者击发段独占方位, 非持锁者让舵(同方位齐射共享炮塔, 方位跟随持锁者复检)
+                        if (!_turretLock.IsHeld) Turret.SetDesiredRotation(b);
                         gunSys.SetElevationTarget(e);
                         yield return null;
                     }
@@ -756,16 +765,20 @@ public class FSC
     /// 主流程击发段抢锁后置 <see cref="TurretReservation.Aiming"/>，此处停止驱动。
     /// </summary>
     private IEnumerator ReserveTurretAndRotate(ArtilleryTask task, TurretReservation res) {
-        // 不抢 _turretLock：方位旋转与另一管并行（单 Turret 共享机构, 后写者赢,
-        // 但各自击发前必先抢锁复检, 不会在错误方位击发）。
+        // 不抢 _turretLock：方位旋转与另一管并行（单 Turret 共享机构, 后写者赢）——
+        // 但先来后到：锁被另一管击发段占有时让舵（不写方位），待其释放后再追。
+        // 锁外自由转（两管都追）无害——最终谁先进击发段谁持锁独占, 复检窗口无人抢舵。
         // 对齐源头 svr2kos2: 装填期立即转静态方位(设一次, 引擎加速到 rotationSpeed 全速转,
         // 转完恰逢装填完)。静态目标此前因 TryGetMovingBearing 返回 false 而装填期不转——
         // 此处无条件设一次, 触发时机提前且不每帧重写 DesiredRotation(避免干扰引擎速度平滑)。
-        Turret.SetDesiredRotation(task.angel);
+        if (!_turretLock.IsHeld)
+            Turret.SetDesiredRotation(task.angel);
         while (!res.Released) {
-            // 主流程击发段接管后(Aiming)停止; 取消则退出。静态目标 TryGetMovingBearing 返回 false,
-            // 保持开头设的 task.angel 不重设; 移动目标速度建立后每帧追提前点。
-            if (!res.Aiming && !res.Canceled && TryGetMovingBearing(task, out var bearing))
+            // 主流程击发段接管后(Aiming)停止; 取消则退出; 锁被他人持有(击发段)让舵。
+            // 静态目标 TryGetMovingBearing 返回 false, 保持开头设的 task.angel 不重设;
+            // 移动目标速度建立后每帧追提前点。
+            if (!res.Aiming && !res.Canceled && !_turretLock.IsHeld
+                && TryGetMovingBearing(task, out var bearing))
                 Turret.SetDesiredRotation(bearing);
             yield return null;
         }
@@ -832,26 +845,37 @@ public class FSC
     /// </summary>
     private void AdoptVelocityIfNeeded(ArtilleryTask task) {
         if (EntityLocator == null) return;
+        // 跟踪对象: 集群任务看领队(车列编队同步动停), 单点任务就是自身
+        var trackId = task.TrackEntityId is { Length: > 0 } ? task.TrackEntityId : task.entityId;
         if (task.VelocityUnknown) {
-            if (EntityLocator.TryGetMotion(task.entityId, out var pos, out var vel)) {
+            if (trackId is { Length: > 0 } && EntityLocator.TryGetMotion(trackId, out var pos, out var vel)) {
                 task.AimP0 = pos;
                 task.AimVel = vel;
                 task.AimStartTime = Time.time;
                 task.VelocityUnknown = false;
                 task.IsMoving = TargetLeadSolver.IsMoving(vel);
-                MelonLogger.Msg($"[FCS] 已采纳 {task.entityId} 速度 {vel.magnitude * 3.8164f:F3}km/s, 快照重置");
+                MelonLogger.Msg($"[FCS] 已采纳 {trackId} 速度 {vel.magnitude * 3.8164f:F3}km/s, 快照重置");
             }
             return;
         }
-        if (task.IsMoving && task.entityId is { Length: > 0 }
-            && EntityLocator.TryGetMotion(task.entityId, out var livePos, out var liveVel)
+        if (task.IsMoving && trackId is { Length: > 0 }
+            && EntityLocator.TryGetMotion(trackId, out var livePos, out var liveVel)
             && (liveVel - task.AimVel).magnitude * ShellData.KmPerWorldUnit > 0.002f)
         {
             task.AimP0 = livePos;
             task.AimVel = liveVel;
             task.AimStartTime = Time.time;
             task.IsMoving = TargetLeadSolver.IsMoving(liveVel);
-            MelonLogger.Msg($"[FCS] 变速采纳 {task.entityId}: v={liveVel.magnitude * 3.8164f:F3}km/s, 快照重置{(task.IsMoving ? "" : " (停车→静态)")}");
+            if (!task.IsMoving) {
+                // 停车 → 静态瞄准点: 集群任务 = 领队当前位置 + 集群偏移(保持车列中点, 落点不跳车头);
+                // 单点任务 = 目标当前位置(不再追幽灵提前点)
+                task.position = task.TrackEntityId is { Length: > 0 } && task.ClusterOffset.sqrMagnitude > 0f
+                    ? livePos + task.ClusterOffset
+                    : livePos;
+                task.angel = Bearing(task.position);
+                task.distance = DistKm(task.position);
+            }
+            MelonLogger.Msg($"[FCS] 变速采纳 {trackId}: v={liveVel.magnitude * 3.8164f:F3}km/s, 快照重置{(task.IsMoving ? "" : " (停车→静态, 落点改当前位置)")}");
         }
     }
 
@@ -944,13 +968,17 @@ public class FSC
             useMaxCharge = false,
             Source = TaskSource.Auto,
             BlastRadiusKm = ShellData.BlastRadiusKm(shell),
-            // 移动集群: 冻结快照带整簇(装填期采纳无必要——速度已知), 提前量路径击发前重算提前点
+            // 移动集群: 冻结快照带整簇(装填期采纳无必要——速度已知), 提前量路径击发前重算提前点。
+            // TrackEntityId=领队: 车列剧情停车/变速时二次采纳(AdoptVelocityIfNeeded)跟踪对象。
+            // ClusterOffset=落点相对领队: 停车采纳时落点跟领队平移, 保持车列中点。
             IsMoving = ti.IsMoving,
             AimP0 = impact,
             AimVel = ti.Velocity,
             AimStartTime = Time.time,
             VelocityUnknown = false,
             ClusterMembers = members,
+            TrackEntityId = ti.EntityId,
+            ClusterOffset = impact - ti.WorldPos,
         };
     }
 

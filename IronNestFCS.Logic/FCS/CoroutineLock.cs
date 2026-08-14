@@ -38,6 +38,10 @@ public sealed class CoroutineLock {
         _held = false;
     }
 
+    /// <summary>锁当前是否被持有。供方位驱动仲裁（先来后到）：锁被他人占用时让舵，
+    /// 停止写共享炮塔方位，待锁释放后再继续追——避免双管后台协程互相覆盖 DesiredRotation。</summary>
+    public bool IsHeld => _held;
+
     /// <summary>重绑定（热重载）时强制复位，防止上一轮异常残留导致死锁。</summary>
     public void Reset() {
         _held = false;
