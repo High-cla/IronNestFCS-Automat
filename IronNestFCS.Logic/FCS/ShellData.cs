@@ -37,14 +37,16 @@ public static class ShellData
     public static float BlastRadiusKm(BulletType t)
         => runtimeRadiusKm.TryGetValue(t, out var v) && v > 0f ? v : HardcodedBlastRadiusKm(t);
 
-    /// <summary>硬编码兜底表(历史维基/实测校准, 2026-08-12)。</summary>
+    /// <summary>硬编码兜底表(历史维基/实测校准, 2026-08-12)。
+    /// 注意: 运行时精准表(ShellDefinition.ImpactRadius)正常加载时优先, 此表仅兜底。
+    /// APHE=1.0 与 AphcheDeck 注入定义 ImpactRadius=1f(用户确认) 统一——兜底路径不漂移。</summary>
     public static float HardcodedBlastRadiusKm(BulletType t) => t switch
     {
         BulletType.AP => 0.08f,
         BulletType.HE => 0.12f,
         BulletType.HCHE => 0.30f,
         BulletType.LE => 0.08f,   // 轻弹, 单点用; 半径与 AP 相同(用户确认)
-        BulletType.APHE => 0.5f, // 特殊复合弹(用户确认)
+        BulletType.APHE => 1.0f, // 复合弹(用户确认: AphcheDeck.ImpactRadius=1)
         _ => 0f
     };
 
