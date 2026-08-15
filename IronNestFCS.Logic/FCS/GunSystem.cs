@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using Il2Cpp;
 using Il2CppTMPro;
 using MelonLoader;
@@ -125,13 +125,19 @@ public class GunSystem {
     /// （上游 svr2kos2 3951d055 移植）
     /// </summary>
     private IEnumerator WaitForReloadReady() {
+        // 2026-08-15 防卡死: 机构状态(working/炮闩锁定/仰角运动)可能被游戏残留卡住,
+        // 无限等待=任务永久卡死+槽位不释放+系统瘫痪。30s 超时强制继续(装填失败会由膛内确认兜底 Failed)。
+        var readyStart = Time.time;
         while (gunController != null) {
             var mechanismReady = reloadController == null || !reloadController.working;
             var breechReady = !gunController.ExternalReloadLoweringLocked;
             var motionReady = gunController.elevationChangeVelocity == 0;
             if (mechanismReady && breechReady && motionReady)
                 yield break;
-
+            if (Time.time - readyStart > 30f) {
+                MelonLogger.Warning($"[FCS] GunSystem {_surfix}: 装填机构 30s 未就绪(working={reloadController?.working} locked={gunController.ExternalReloadLoweringLocked} elevV={gunController.elevationChangeVelocity}) — 强制继续(防永久卡死)");
+                yield break;
+            }
             yield return new WaitForSeconds(0.1f);
         }
     }

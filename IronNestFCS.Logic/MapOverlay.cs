@@ -21,11 +21,11 @@ public class MapOverlay
     // ==== 调参项(构建机实测) ====
     private const float TickInterval = 1f;
     private const float PathLengthKm = 1.5f;        // 移动路径固定可见长度(km)
-    private const float LineWidthWorld = 0.015f;    // 线宽(世界单位, 用户确认减半)
+    private const float LineWidthWorld = 0.0075f;   // 线宽(世界单位, 用户确认再减半)
     private const int CircleSegments = 48;
     private const int DashSegments = 6;             // 移动路径虚线段数
 
-    private static readonly Color LineColor = new(0.55f, 0.05f, 0.05f);   // 深红(火力线/毁伤圈, 同游戏语义)
+    private static readonly Color LineColor = new(0.85f, 0.08f, 0.05f);   // 鲜红(火力线/毁伤圈, 深色地图上可见)
     private static readonly Color PathColor = new(0.9f, 0.9f, 0.9f);      // 白(移动路径, 尺规语义)
 
     private readonly FSC fcs;
@@ -108,6 +108,8 @@ public class MapOverlay
         // 毁伤圈: 描边环(半径=注册表同源数据)
         if (s.ring != null && t.BlastRadiusKm > 0f) {
             float rMap = t.BlastRadiusKm / ShellData.KmPerWorldUnit;
+            s.ring.loop = true;                          // 闭合描边
+            s.ring.startWidth = s.ring.endWidth = LineWidthWorld;   // 圈线宽 = 火力线同宽(用户确认, 不再自适应)
             s.ring.positionCount = CircleSegments;
             for (int i = 0; i < CircleSegments; i++) {
                 float a = i * 2f * Mathf.PI / CircleSegments;

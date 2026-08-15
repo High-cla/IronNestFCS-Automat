@@ -229,7 +229,14 @@ public class FcsSceneInteractor {
             MelonLogger.Error("[FCS] WaitAndClick: button is null");
             yield break;
         }
+        // 2026-08-15 防卡死: 按钮 inactive/冷却未到可能被游戏状态残留卡住, 无限等=任务永久卡死。
+        // 30s 超时跳过点击(调用方后续校验会 Failed, 系统恢复)。
+        var clickStart = Time.realtimeSinceStartup;
         while (button.isActive == false || button.nextAllowedClickTime > Time.realtimeSinceStartup) {
+            if (Time.realtimeSinceStartup - clickStart > 30f) {
+                MelonLogger.Warning($"[FCS] WaitAndClick: {button.name} 30s 未就绪(active={button.isActive}) — 跳过点击(防永久卡死)");
+                yield break;
+            }
             yield return new WaitForSeconds(0.1f);
         }
         yield return new WaitForSeconds(0.1f);

@@ -17,9 +17,26 @@ public static class AphcheDeck
     /// <summary>注入卡的稳定 ID，TryBind/幂等检测都用它。</summary>
     public const string CardId = "APShellMod";
 
-    /// <summary>属性常量（用户实测 2026-08-15: 毁伤半径 0.25km, Damage 5。落点 0.37km 目标未杀伤, 运行时 ImpactRadius=0.25 即真值）。</summary>
-    public const float ImpactRadius = 0.25f;
+    /// <summary>属性常量（用户调校 2026-08-15: 毁伤半径 1km, Damage 5。三处同步: 本常量/ShellData 兜底/FSC 特判）。</summary>
+    public const float ImpactRadius = 1f;
     public const int ShellDamage = 5;
+
+    /// <summary>卡已存在时刷新其定义: 旧场景热重载后注入常量可能已改, 直接改已存在卡副本的 ImpactRadius(1km)。</summary>
+    private static void RefreshExistingCard(PunchcardRuntime card)
+    {
+        try {
+            var nodes = ((NodeGraph)card.CurrentDefinition.Graph).nodes;
+            for (int i = 0; i < nodes.Count; i++) {
+                if (!nodes[i].name.Contains("State_Add Shell")) continue;
+                var addShell = nodes[i].TryCast<State_AddShell>();
+                if (addShell == null || addShell.Shell == null) continue;
+                addShell.Shell.ImpactRadius = ImpactRadius;
+                break;
+            }
+        } catch (System.Exception ex) {
+            MelonLogger.Warning($"[FCS] AphcheDeck: 刷新已存在卡失败: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// 等待 PunchcardRuntime 就绪 → 幂等检查 → 复制 APShell 卡改造为 APHE 并注入。
@@ -34,7 +51,8 @@ public static class AphcheDeck
         var objs = Object.FindObjectsOfType<PunchcardRuntime>();
         foreach (var obj in objs) {
             if (obj.CurrentDefinition.ID == CardId) {
-                MelonLogger.Msg("[FCS] AphcheDeck: 卡已存在, 跳过注入");
+                MelonLogger.Msg("[FCS] AphcheDeck: 卡已存在, 刷新定义(ImpactRadius=1km)后跳过注入");
+                RefreshExistingCard(obj);
                 // 兜底: 确保采购槽位已注册(热重载后 TryBind 可能早于注入)
                 deck.RegisterCard(BulletType.APHE, obj.transform);
                 yield break;

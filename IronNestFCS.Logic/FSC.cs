@@ -99,6 +99,10 @@ public class FSC
     /// </summary>
     private readonly CoroutineLock _turretLock = new();
 
+    /// <summary>方位驱动权(2026-08-15): 共享炮塔单方位角, 双管异目标并行驱动=互相抢(后写者赢, 来回转)。
+    /// 先到先得: 持权任务驱动方位, 另一管让舵(只追仰角)。击发段持锁者优先级最高, 任务 finally 释放。</summary>
+    private ArtilleryTask? _bearingDriver;
+
     // 正在运行的协程句柄。Dispose 时全部停掉，避免热重载后旧 ALC 的协程继续执行导致崩溃。
     private readonly List<object> _runningCoroutines = new();
     public FSC() {
@@ -116,6 +120,7 @@ public class FSC
         _harmony = new HarmonyInstance(HarmonyId);
         _deskLock.Reset();
         _turretLock.Reset();
+        _bearingDriver = null;
         IsBound = MapTable.TryBind()
                   && BallisticCalculator.TryBind()
                   && LeftGun.TryBind("Left")
@@ -136,7 +141,7 @@ public class FSC
 
     /// <summary>从已加载弹种定义(ScriptableObject)填充精准毁伤半径表 + 杀伤弹判定。
     /// 实测开局 21 弹种定义全部已加载(Resources.FindObjectsOfTypeAll); 缺的定义回退硬编码表。
-    /// APHE: 用户实测 0.37km 目标未杀伤, 运行时 ImpactRadius=0.25 即真值——显式注册防场景切换回退硬编码。</summary>
+    /// APHE: 用户调校 2026-08-15 定 1km(注入卡定义同步 1f)——显式注册防场景切换回退硬编码。</summary>
     private static void CacheShellRadiusTable() {
         try {
             foreach (var sd in Resources.FindObjectsOfTypeAll<ShellDefinition>()) {
@@ -146,8 +151,8 @@ public class FSC
                 ShellData.RegisterRuntimeRadius(t, sd.ImpactRadius);
                 ShellData.RegisterKillShell(t, sd.Damage > 0);
             }
-            ShellData.RegisterRuntimeRadius(BulletType.APHE, 0.25f);  // 用户实测 2026-08-15: 落点 0.37km 目标未杀伤——运行时字段 0.25 即真值, 1km 特判撤销
-            MelonLogger.Msg("[FCS] 精准爆炸半径表已加载(ShellDefinition.ImpactRadius, APHE=0.25km 实测校准)");
+            ShellData.RegisterRuntimeRadius(BulletType.APHE, 1f);  // 用户调校 2026-08-15: APHE=1km(三处同步: 本特判/ShellData 兜底/AphcheDeck 注入卡)
+            MelonLogger.Msg("[FCS] 精准爆炸半径表已加载(ShellDefinition.ImpactRadius, APHE=1km 用户调校)");
         }
         catch (Exception ex) {
             MelonLogger.Error($"[FCS] CacheShellRadiusTable failed: {ex.Message}");
@@ -569,6 +574,7 @@ public class FSC
             turret.PostLoad = true;
             task.progress = Progress.Aiming;
             var aimTrackStart = Time.time;
+            var bearingSet = false;   // 静态目标只设一次标志(对齐源头: 每帧重写致反向震荡)
             while (true) {
                 TryComputeAimTargets(task, out var bearingTarget, out var elevTarget);
                 // 出装药覆盖检查: 移动目标提前点距离超过装药射程 → 退化
@@ -584,9 +590,11 @@ public class FSC
                 // 先来后到: 锁被另一管击发段占有时让舵(停止写共享炮塔方位), 只追仰角(每管独立);
                 // 锁释放后恢复追方位。等锁期间重置超时计时——等待不算"追不上"。
                 var canDriveBearing = turret.Acquired || !_turretLock.IsHeld;
-                if (canDriveBearing) {
-                    Turret.SetDesiredRotation(bearingTarget);
+                if (canDriveBearing && (turret.Acquired || TryTakeBearing(task))) {
+                    // 静态目标只设一次(对齐源头 svr2kos2: 每帧重写干扰游戏目标动力学致反向震荡); 移动目标每帧追提前点
+                    if (task.IsMoving || !bearingSet) { Turret.SetDesiredRotation(bearingTarget); bearingSet = true; }
                 } else {
+                    bearingSet = false;   // 让舵(他人持权/持锁)恢复后重新写目标
                     aimTrackStart = Time.time;
                 }
                 gunSys.SetElevationTarget(elevTarget);
@@ -616,9 +624,10 @@ public class FSC
                 MelonLogger.Msg($"[FCS] {leftRight} 炮塔锁已持有, 进入瞄准/击发段");
                 // 抢锁等待期间另一管可能已转动共享炮塔, 因此抢到后复检对齐(60s), 未对齐则失败
                 var lockRecheckStart = Time.time;
+                bool rcBearingSet = false;
                 while (!AlignOk(task, gunSys, AimToleranceDeg) && Time.time - lockRecheckStart < 60f) {
                     TryComputeAimTargets(task, out var b, out var e);
-                    Turret.SetDesiredRotation(b);
+                    if (task.IsMoving || !rcBearingSet) { Turret.SetDesiredRotation(b); rcBearingSet = true; }
                     gunSys.SetElevationTarget(e);
                     yield return null;
                 }
@@ -644,9 +653,10 @@ public class FSC
                     } else {
                         // AutoFire 关: 持续跟踪 aim(t) 直到玩家扳机——否则炮管停在旧点, 移动目标必偏。
                         // 静态任务此循环目标值恒定, 退化为无操作等待。
+                        bool waitBearingSet = false;
                         while (!gunSys.IsPendingReload()) {
                             TryComputeAimTargets(task, out var b, out var e);
-                            Turret.SetDesiredRotation(b);
+                            if (task.IsMoving || !waitBearingSet) { Turret.SetDesiredRotation(b); waitBearingSet = true; }
                             gunSys.SetElevationTarget(e);
                             yield return null;
                         }
@@ -657,6 +667,7 @@ public class FSC
                     // 伙伴还在装填/瞄准/武装 → 继续等(不抢锁——抢早了伙伴未武装, 齐射退化成两发串行);
                     // 伙伴任务消失/失败/取消/已打完/方位发散或超时 → 配对破裂, 兜底抢锁自行击发。
                     var salvoWaitStart = Time.time;
+                    bool salvoBearingSet = false;
                     while (!gunSys.IsPendingReload()) {
                         var other = leftRight == LeftRight.Left ? RightTask : LeftTask;
                         var otherReady = other != null && other != task
@@ -675,8 +686,8 @@ public class FSC
                         if ((pairBroken || Time.time - salvoWaitStart > SalvoWaitTimeoutSeconds)
                             && TryAcquireTurret(turret)) break;
                         TryComputeAimTargets(task, out var b, out var e);
-                        // 先来后到: 锁被持锁者占用时让舵; 空闲时追方位(伙伴装填期后台也在追, 同方位值≈相同)
-                        if (!_turretLock.IsHeld) Turret.SetDesiredRotation(b);
+                        // 先来后到: 锁被持锁者占用时让舵; 空闲时追方位(静态只设一次, 移动每帧追)
+                        if (!_turretLock.IsHeld && TryTakeBearing(task) && (task.IsMoving || !salvoBearingSet)) { Turret.SetDesiredRotation(b); salvoBearingSet = true; }
                         gunSys.SetElevationTarget(e);
                         yield return null;
                     }
@@ -684,25 +695,30 @@ public class FSC
                         // 兜底抢到锁(伙伴放弃/配对破裂) → 复检对齐后自己击发
                         if (_sceneInteractor.AutoFire || task.forceFire) {
                             var recheckStart = Time.time;
+                            bool recheckBearingSet = false;
                             while (!AlignOk(task, gunSys, AimToleranceDeg) && Time.time - recheckStart < 5f) {
-                                // 等待期炮塔可能被伙伴后台转走(任务易主) → 复检期主动追回方位
+                                // 等待期炮塔可能被伙伴后台转走(任务易主) → 复检期主动追回方位(静态只设一次)
                                 TryComputeAimTargets(task, out var b, out var e);
-                                Turret.SetDesiredRotation(b);
+                                if (task.IsMoving || !recheckBearingSet) { Turret.SetDesiredRotation(b); recheckBearingSet = true; }
                                 gunSys.SetElevationTarget(e);
                                 yield return null;
                             }
                             TriggerConsole.Fire();
                             yield return gunSys.WaitFire();
                         } else {
+                            bool fallbackWaitSet = false;
                             while (!gunSys.IsPendingReload()) {
                                 TryComputeAimTargets(task, out var b, out var e);
-                                Turret.SetDesiredRotation(b);
+                                if (task.IsMoving || !fallbackWaitSet) { Turret.SetDesiredRotation(b); fallbackWaitSet = true; }
                                 gunSys.SetElevationTarget(e);
                                 yield return null;
                             }
                         }
                     }
                 }
+                // 弹已打出(所有路径: 持锁 Fire / 玩家扳机 / 齐射兜底) → 方位权放手,
+                // 另一管立即接管转位(不必等 BackToIdle 回位 13s——回位只动仰角/机构, 不碰方位)
+                ReleaseBearing(task);
                 // 爆区覆盖: 落点 = 静态任务目标/集群质心, 移动任务提前点; 半径 = 该弹毁伤半径
                 Vector3 impactPos = task.position;
                 if (task.IsMoving && TargetLeadSolver.IsMoving(task.AimVel))
@@ -755,6 +771,7 @@ public class FSC
             }
             // 确保炮塔锁归还（已归还的 ReleaseTurretOnce 是幂等的）
             ReleaseTurretOnce(turret);
+            ReleaseBearing(task);   // 方位驱动权归还(双管并行防抢)
             // 通知雷达：有一门炮退膛完毕，可以刷新队列了
             try { OnGunIdle?.Invoke(); } catch { }
         }
@@ -786,17 +803,30 @@ public class FSC
         // 对齐源头 svr2kos2: 装填期立即转静态方位(设一次, 引擎加速到 rotationSpeed 全速转,
         // 转完恰逢装填完)。静态目标此前因 TryGetMovingBearing 返回 false 而装填期不转——
         // 此处无条件设一次, 触发时机提前且不每帧重写 DesiredRotation(避免干扰引擎速度平滑)。
-        if (!_turretLock.IsHeld)
+        if (!_turretLock.IsHeld && TryTakeBearing(task))
             Turret.SetDesiredRotation(task.angel);
         while (!res.Released) {
             // 主流程击发段接管后(Aiming)停止; 取消则退出; 锁被他人持有(击发段)让舵。
             // 静态目标 TryGetMovingBearing 返回 false, 保持开头设的 task.angel 不重设;
             // 移动目标速度建立后每帧追提前点。
             if (!res.Aiming && !res.Canceled && !_turretLock.IsHeld
+                && TryTakeBearing(task)
                 && TryGetMovingBearing(task, out var bearing))
                 Turret.SetDesiredRotation(bearing);
             yield return null;
         }
+    }
+
+    /// <summary>非阻塞获取方位驱动权(2026-08-15 双管防抢): 空闲/自己已持权 → 成功; 他人持权 → 让舵(只追仰角)。</summary>
+    private bool TryTakeBearing(ArtilleryTask task) {
+        if (_bearingDriver != null && !ReferenceEquals(_bearingDriver, task)) return false;
+        _bearingDriver = task;
+        return true;
+    }
+
+    /// <summary>释放方位驱动权(仅自己持权时清空)。任务 finally 调用。</summary>
+    private void ReleaseBearing(ArtilleryTask task) {
+        if (ReferenceEquals(_bearingDriver, task)) _bearingDriver = null;
     }
 
     /// <summary>归还炮塔锁。Released 标记"主流程已结束占用"(无论是否持锁), 后台 while(!res.Released) 据此退出。

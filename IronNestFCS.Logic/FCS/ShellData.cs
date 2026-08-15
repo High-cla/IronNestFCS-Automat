@@ -46,7 +46,7 @@ public static class ShellData
         BulletType.HE => 0.12f,
         BulletType.HCHE => 0.30f,
         BulletType.LE => 0.08f,   // 轻弹, 单点用; 半径与 AP 相同(用户确认)
-        BulletType.APHE => 0.25f, // 复合弹(用户实测: 落点 0.37km 目标未杀伤, 与运行时 ImpactRadius 同值)
+        BulletType.APHE => 1f, // 复合弹(用户调校 2026-08-15: 1km, 三处同步)
         _ => 0f
     };
 
