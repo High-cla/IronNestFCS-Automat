@@ -58,6 +58,18 @@ public class PurchaseDeck {
         return  consoleBox.GetComponentInChildren<DialInteractable>();
     }
 
+    /// <summary>强制购买: 点击购买前把征用点数注满, 与征用点数脱钩(点数不足时购买按钮点击无效)。
+    /// 用游戏自带 SetRequisitionPoints(实测 tampered 防篡改标记不置位), 每次采购都充值到 999999,
+    /// 相当于无限点数。空引用安全(找不到账本时静默, 退化为原行为)。</summary>
+    private static void EnsureFunded() {
+        try {
+            MissionStatsTracker.Instance?.SetRequisitionPoints(999999, false);
+        }
+        catch (Exception ex) {
+            MelonLogger.Error($"[FCS] EnsureFunded failed: {ex.Message}");
+        }
+    }
+
     public IEnumerator BuyShell(BulletType type, LeftRight leftRight) {
         var card = bulletCards.GetValueOrDefault(type);
         if (card == null) {
@@ -81,6 +93,7 @@ public class PurchaseDeck {
                 GetLeftRightDial().SetDialValue(1);
                 break;
         }
+        EnsureFunded();   // 强制购买: 点数注满后再点购买, 不受征用点数限制
         yield return FcsSceneInteractor.WaitAndClick(_buyButton);
         yield return new WaitForSeconds(2f);
     }
@@ -97,6 +110,7 @@ public class PurchaseDeck {
         _powderCard.GetComponent<DraggableItem>().MoveToSlot();
         // 与 BuyShell 一致：等卡牌入槽稳定后再点购买，避免点击早于入槽导致本次采购无效。
         yield return new WaitForSeconds(0.5f);
+        EnsureFunded();   // 强制购买: 点数注满后再点购买, 不受征用点数限制
         yield return FcsSceneInteractor.WaitAndClick(_buyButton);
         yield return new WaitForSeconds(2f);
     }

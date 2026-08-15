@@ -2,7 +2,6 @@ using Il2Cpp;
 using IronNestFCS.Abstractions;
 using IronNestFCS.Logic.FCS;
 using MelonLoader;
-using System.Reflection;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Object = UnityEngine.Object;
@@ -35,18 +34,18 @@ public class FcsModule : IFcsModule
         return bound;
     }
 
-    /// <summary>调试: 运行时反射打印 PunchcardRuntime(征用台购买卡)的字段/方法/属性签名,
-    /// 供"强制购买/与征用点数脱钩"分析游戏购买机制(点数字段/购买方法在哪)。纯只读反射, 不注册新 IL2CPP 类型。</summary>
+    /// <summary>诊断: 打印征用点数状态一行。强制购买见 PurchaseDeck.EnsureFunded——
+    /// 每次采购点击前 SetRequisitionPoints 注满(实测 tampered 防篡改标记不置位, 游戏自带 Set 可安全充值)。</summary>
     private static void ProbePunchcardRuntime() {
-        var t = typeof(PunchcardRuntime);
-        MelonLogger.Msg($"[FCS] Probe {t.FullName} base={t.BaseType?.FullName} 接口={string.Join(",", t.GetInterfaces().Select(i => i.Name))}");
-        foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-            MelonLogger.Msg($"[FCS]   field: {f.FieldType.Name} {f.Name}");
-        foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-            MelonLogger.Msg($"[FCS]   prop: {p.PropertyType.Name} {p.Name}{(p.CanRead ? " {get;}" : "")}{(p.CanWrite ? " {set;}" : "")}");
-        foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
-                 .Where(m => !m.IsSpecialName))
-            MelonLogger.Msg($"[FCS]   method: {m.ReturnType.Name} {m.Name}({string.Join(", ", m.GetParameters().Select(pa => pa.ParameterType.Name + " " + pa.Name))})");
+        try {
+            var mst = MissionStatsTracker.Instance;
+            if (mst != null) {
+                MelonLogger.Msg($"[FCS] RP 状态: requisitionPoints={mst.requisitionPoints} tampered={mst.requisitionPointsTampered}");
+            }
+        }
+        catch (Exception ex) {
+            MelonLogger.Msg($"[FCS] RP probe err: {ex.Message}");
+        }
     }
 
     /// <summary>任一炮管退膛 → 扫描 → 清空队列 → 给每门空闲炮管各派一个目标。扫荡中每 5s 也跑一次，用于在飞窗口到期后恢复派发。</summary>
