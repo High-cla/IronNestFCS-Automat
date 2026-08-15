@@ -99,19 +99,6 @@ public class GunSystem {
         return gunController != null && gunController.CanFire;
     }
 
-    public IEnumerator SetElevation(float elevation) {
-        if (elevationLever == null || gunController == null) {
-            MelonLogger.Error($"[FCS] GunSystem {_surfix}: Elevation lever or gun controller unbound");
-            yield break;
-        }
-        elevationLever.SetSliderValue(elevation);
-        yield return new WaitForSeconds(0.1f);
-        while (!Mathf.Approximately(gunController.CurrentElevation, elevation)) {
-            elevationLever.SetSliderValue(elevation);
-            yield return new WaitForSeconds(1f);
-        }
-    }
-    
     public string? BulletInChamber() {
         return gunController?.ChamberedShellBlueprint?.shellDefinition?.ShellId?.Replace("PLCM", "PCLM");
     }

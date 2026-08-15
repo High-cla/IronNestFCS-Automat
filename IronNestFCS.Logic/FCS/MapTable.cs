@@ -120,17 +120,4 @@ public class MapTable {
         return Vector3.zero;
     }
 
-    public List<EntityLocation> GetAllFireMissionEntities() {
-        List<EntityLocation> res = new();
-        if (fireMissionRoot == null) {
-            return res;
-        }
-
-        for (var i = 0; i < fireMissionRoot.childCount; ++i) {
-            var m = fireMissionRoot.GetChild(i).GetComponent<EntityLocation>();
-            if (m != null) res.Add(m);
-        }
-        return res;
-    }
-    
 }
