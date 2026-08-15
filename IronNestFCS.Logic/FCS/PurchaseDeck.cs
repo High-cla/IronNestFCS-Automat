@@ -13,7 +13,17 @@ public class PurchaseDeck {
 
 
     public bool TryBind() {
-        var requisitionConsole = GameObject.Find("Requisition Console").transform;
+        Rescan();
+        return true;
+    }
+
+    /// <summary>扫描征用台卡片注册表。场景重建/热重载后旧 Transform 引用失效时重新扫描自愈(幂等)。
+    /// 与 AphcheDeck 的延迟注入互补: 它补"卡后生成"的 APHE, 本方法补"整台重建"的全部卡。</summary>
+    public void Rescan() {
+        bulletCards.Clear();
+        _powderCard = null;
+        var requisitionConsole = GameObject.Find("Requisition Console");
+        if (requisitionConsole == null) return;
         var cards = requisitionConsole.GetComponentsInChildren<PunchcardRuntime>();
         foreach (var card in cards) {
             MelonLogger.Msg($"[FCS] PurchaseDeck: Found card {card.CurrentDefinition.ID}");
@@ -33,9 +43,8 @@ public class PurchaseDeck {
             }
         }
         
-        _buyButton = requisitionConsole.FindChild("Universal Button").GetComponent<LookAtTarget>();
-        
-        return true;
+        var btn = requisitionConsole.transform.FindChild("Universal Button");
+        _buyButton = btn == null ? null : btn.GetComponent<LookAtTarget>();
     }
 
     /// <summary>AphcheDeck 加卡成功后动态注册该卡，避免错过 TryBind 时机的卡片。</summary>
@@ -51,6 +60,10 @@ public class PurchaseDeck {
 
     public IEnumerator BuyShell(BulletType type, LeftRight leftRight) {
         var card = bulletCards.GetValueOrDefault(type);
+        if (card == null) {
+            Rescan();   // 场景重建/首绑早于卡生成时自愈, 再试一次
+            card = bulletCards.GetValueOrDefault(type);
+        }
         if (card == null) {
             MelonLogger.Error($"[FCS] BuyShell: Can't find {type} card");
             yield break;
@@ -73,6 +86,9 @@ public class PurchaseDeck {
     }
 
     public IEnumerator BuyPowders() {
+        if (_powderCard == null) {
+            Rescan();   // 场景重建/首绑早于卡生成时自愈, 再试一次
+        }
         if (_powderCard == null) {
             MelonLogger.Error("[FCS] BuyPowders: Can't find PowderCharges card");
             yield break;

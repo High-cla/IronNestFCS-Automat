@@ -390,6 +390,22 @@ public class FSC
         BulletType.HE => BulletType.HCHE,
         _ => t
     };
+
+    /// <summary>弹仓已有弹药复用: 沿回退链(LE/AP→HE→HCHE)找弹仓中存在的弹种, 链上无则兜底任意有爆区弹种
+    /// (STAR/SMK 等无爆区弹种自动排除)。返回 null = 弹仓无可用杀伤弹(需采购或失败)。</summary>
+    private static BulletType? PickReusableShell(BulletType want, List<BulletType> available) {
+        if (available.Count == 0) return null;
+        var cur = want;
+        for (var i = 0; i < 4; i++) {
+            var next = FallbackShell(cur);
+            if (next == cur) break;
+            cur = next;
+            if (available.Contains(cur)) return cur;
+        }
+        foreach (var t in available)
+            if (ShellData.BlastRadiusKm(t) > 0f && t != want) return t;
+        return null;
+    }
     /// <summary>把队首任务派给空闲炮管，直到没有空闲炮管或队列空。</summary>
     private void TryDispatch() {
         while (_taskQueue.Count > 0) {
@@ -458,9 +474,18 @@ public class FSC
             // 未解锁弹种(如 LE)采购点击无效——采购后核验弹是否真进舱, 未进则沿回退链换弹重试,
             // 避免"LE 永远买不到 → 任务失败 → 重新派发再试 LE"的死循环。
             if (!gunSys.HaveBulletInCylinder(task.bulletType)) {
-                if (!gunSys.HaveEmptyShellInCylinder()) {
+                // 弹仓有货先复用: 任务弹种缺货时沿回退链找弹仓内已有弹种(如 HCHE 集群任务遇 HE 满仓),
+                // 兜底任意有爆区弹种——有弹就打, 不因弹种不匹配干等采购/直接失败。
+                var reuse = PickReusableShell(task.bulletType, gunSys.ShellTypesInCylinder());
+                if (reuse != null) {
+                    MelonLogger.Msg($"[FCS] {leftRight} 弹仓无 {task.bulletType}, 改用炮架已有 {reuse}");
+                    task.bulletType = reuse.Value;
+                    task.BlastRadiusKm = ShellData.BlastRadiusKm(reuse.Value);
+                }
+                else if (!gunSys.HaveEmptyShellInCylinder()) {
                     task.progress = Progress.Failed;
                     viable = false;
+                    MelonLogger.Error($"[FCS] {leftRight} 弹仓满且无可用杀伤弹({task.bulletType}), 任务失败");
                 }
                 else {
                     for (var attempt = 0; attempt < 4; attempt++) {

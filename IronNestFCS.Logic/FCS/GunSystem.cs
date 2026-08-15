@@ -206,6 +206,17 @@ public class GunSystem {
         return bullets.Contains(null);
     }
 
+    /// <summary>弹仓内当前弹种列表(空弹位跳过)。任务弹种缺货时先看炮架上有什么——有货复用, 不直接失败。</summary>
+    public List<BulletType> ShellTypesInCylinder() {
+        RefreshBullets();
+        var result = new List<BulletType>();
+        foreach (var id in bullets) {
+            if (id == null) continue;
+            if (Enum.TryParse(id, out BulletType t)) result.Add(t);
+        }
+        return result;
+    }
+
     public IEnumerator WaitBackToIdle() {
         // 保留原来的 13 秒最小恢复窗口，但同时要求正式版装填机构真正结束工作。
         // 这样下一任务不会只因为炮管停止运动就过早进入装填。
