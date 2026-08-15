@@ -30,7 +30,7 @@ public class FcsModule : IFcsModule
         // APHE 特殊复合弹卡: 每局注入(幂等)。等 PunchcardRuntime 就绪, 由 AphcheDeck 内部轮询。
         // 所有场景都试注入, 找不到 Requisition Console 的素材卡时会安全退出。
         fcs.StartTrackedCoroutine(AphcheDeck.AddCardIfMissing(fcs.PurchaseDeck));
-        if (bound) ProbePunchcardRuntime();   // 调试: 打印游戏购买类型成员, 供"强制购买/点数脱钩"分析
+        if (bound) ProbePunchcardRuntime();   // 诊断: 征用点数状态
         return bound;
     }
 
@@ -47,6 +47,8 @@ public class FcsModule : IFcsModule
             MelonLogger.Msg($"[FCS] RP probe err: {ex.Message}");
         }
     }
+
+
 
     /// <summary>任一炮管退膛 → 扫描 → 清空队列 → 给每门空闲炮管各派一个目标。扫荡中每 5s 也跑一次，用于在飞窗口到期后恢复派发。</summary>
     private void OnGunIdle()

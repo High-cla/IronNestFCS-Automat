@@ -126,11 +126,30 @@ public class FSC
         MelonLogger.Msg("[FCS] Initialize: " + (IsBound ? "success" : "failed"));
         if (IsBound) {
             CacheAimGeometry();   // 连续瞄准几何缓存(一次, 避免每帧 GameObject.Find)
+            CacheShellRadiusTable();   // 精准爆炸半径表(ShellDefinition.ImpactRadius)
             // 驻留装药补给协程:保证装药充足,减少任务内等待购买。
             _runningCoroutines.Add(MelonCoroutines.Start(ReplenishPowderLoop()));
         }
 
         return IsBound;
+    }
+
+    /// <summary>从已加载弹种定义(ScriptableObject)填充精准毁伤半径表 + 杀伤弹判定。
+    /// 实测开局 21 弹种定义全部已加载(Resources.FindObjectsOfTypeAll); 缺的定义回退硬编码表。</summary>
+    private static void CacheShellRadiusTable() {
+        try {
+            foreach (var sd in Resources.FindObjectsOfTypeAll<ShellDefinition>()) {
+                if (sd == null || sd.ShellId == null) continue;
+                var id = sd.ShellId.Replace("PLCM", "PCLM");
+                if (!Enum.TryParse(id, out BulletType t)) continue;
+                ShellData.RegisterRuntimeRadius(t, sd.ImpactRadius);
+                ShellData.RegisterKillShell(t, sd.Damage > 0);
+            }
+            MelonLogger.Msg("[FCS] 精准爆炸半径表已加载(ShellDefinition.ImpactRadius)");
+        }
+        catch (Exception ex) {
+            MelonLogger.Error($"[FCS] CacheShellRadiusTable failed: {ex.Message}");
+        }
     }
     private static void DumpCoordinateRoot(FireMission fm)
     {
@@ -391,8 +410,8 @@ public class FSC
         _ => t
     };
 
-    /// <summary>弹仓已有弹药复用: 沿回退链(LE/AP→HE→HCHE)找弹仓中存在的弹种, 链上无则兜底任意有爆区弹种
-    /// (STAR/SMK 等无爆区弹种自动排除)。返回 null = 弹仓无可用杀伤弹(需采购或失败)。</summary>
+    /// <summary>弹仓已有弹药复用: 沿回退链(LE/AP→HE→HCHE)找弹仓中存在的弹种, 链上无则兜底任意杀伤弹
+    /// (ShellDefinition.Damage>0 判定, STAR/TEAR/WP 等非杀伤自动排除)。返回 null = 弹仓无可用杀伤弹(需采购或失败)。</summary>
     private static BulletType? PickReusableShell(BulletType want, List<BulletType> available) {
         if (available.Count == 0) return null;
         var cur = want;
@@ -403,7 +422,7 @@ public class FSC
             if (available.Contains(cur)) return cur;
         }
         foreach (var t in available)
-            if (ShellData.BlastRadiusKm(t) > 0f && t != want) return t;
+            if (ShellData.IsKillShell(t) && t != want) return t;
         return null;
     }
 
@@ -1021,6 +1040,9 @@ public class FSC
         }
         var friendlies = EntityLocator.AllyPositions;
 
+        // 集群优先级: APHE(便宜+Damage 2) > HE > HCHE(精准半径: APHE/HE=0.25, HCHE=0.55km)
+        var aphe = ClusterSolver.Best(ti.WorldPos, candidates,
+            ShellData.BlastRadiusKm(BulletType.APHE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.APHE));
         var he = ClusterSolver.Best(ti.WorldPos, candidates,
             ShellData.BlastRadiusKm(BulletType.HE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HE));
         var hche = ClusterSolver.Best(ti.WorldPos, candidates,
@@ -1029,7 +1051,8 @@ public class FSC
         BulletType shell;
         Vector3 impact;
         int coverCount;
-        if (he.HasValue && he.Value.Count >= 2) { shell = BulletType.HE; impact = he.Value.Impact; coverCount = he.Value.Count; }
+        if (aphe.HasValue && aphe.Value.Count >= 2) { shell = BulletType.APHE; impact = aphe.Value.Impact; coverCount = aphe.Value.Count; }
+        else if (he.HasValue && he.Value.Count >= 2) { shell = BulletType.HE; impact = he.Value.Impact; coverCount = he.Value.Count; }
         else if (hche.HasValue && hche.Value.Count >= 2) { shell = BulletType.HCHE; impact = hche.Value.Impact; coverCount = hche.Value.Count; }
         else return null;
 

@@ -12,13 +12,33 @@ public static class ShellData
     /// <summary>km → 世界单位（毁伤半径等比较距离前转换）</summary>
     public static float KmToWorld(float km) => km / KmPerWorldUnit;
 
-    /// <summary>
-    /// 致死半径(km)——实测校准(2026-08-12):
-    ///   HE 0.24km 4发不死(集群成员连续4轮存活)、HCHE 0.60km 不死 → 维基"毁伤半径"是满伤包络, 非致死半径。
-    ///   单点(≈0km)一发必死。取值取下界一半, 留余量; 集群只包"真炸得死"的目标。
-    ///   注: 0.27/0.63 原值会让集群成员活着, 同一落点被反复重打(实测 4 发 HE 空耗)。
-    /// </summary>
-    public static float BlastRadiusKm(BulletType t) => t switch
+    /// <summary>运行时精准毁伤半径(km): 来自 ShellDefinition.ImpactRadius(游戏实际爆炸半径,
+    /// 实测全表: AP/LE/PLCM=0.15, HE/APHE/INCN=0.25, THRM=0.35, PRPG/CLMN/STAR=0.5, HCHE/EQKE=0.55,
+    /// FLCH/PHGN=0.62, CYAN/TEAR/WP=0.75, SMK=1, ATMC=3)。FSC.CacheShellRadiusTable 主线程填充。</summary>
+    private static readonly Dictionary<BulletType, float> runtimeRadiusKm = new();
+    private static readonly HashSet<BulletType> killShells = new();
+
+    /// <summary>注册运行时精准半径(km)。radiusKm<=0 忽略, 保持硬编码兜底。</summary>
+    public static void RegisterRuntimeRadius(BulletType t, float radiusKm) {
+        if (radiusKm > 0f) runtimeRadiusKm[t] = radiusKm;
+    }
+
+    /// <summary>注册杀伤弹判定(ShellDefinition.Damage>0; STAR/TEAR/WP Damage=0 非杀伤)。</summary>
+    public static void RegisterKillShell(BulletType t, bool kill) {
+        if (kill) killShells.Add(t); else killShells.Remove(t);
+    }
+
+    /// <summary>是否杀伤弹: 注册表优先; 未注册时排除 STAR/SMK 黑名单(历史行为)。</summary>
+    public static bool IsKillShell(BulletType t) => killShells.Count > 0
+        ? killShells.Contains(t)
+        : t != BulletType.STAR && t != BulletType.SMK;
+
+    /// <summary>毁伤半径(km): 优先运行时精准值(ShellDefinition.ImpactRadius), 无则回退硬编码表。</summary>
+    public static float BlastRadiusKm(BulletType t)
+        => runtimeRadiusKm.TryGetValue(t, out var v) && v > 0f ? v : HardcodedBlastRadiusKm(t);
+
+    /// <summary>硬编码兜底表(历史维基/实测校准, 2026-08-12)。</summary>
+    public static float HardcodedBlastRadiusKm(BulletType t) => t switch
     {
         BulletType.AP => 0.08f,
         BulletType.HE => 0.12f,
