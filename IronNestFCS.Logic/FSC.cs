@@ -146,8 +146,8 @@ public class FSC
                 ShellData.RegisterRuntimeRadius(t, sd.ImpactRadius);
                 ShellData.RegisterKillShell(t, sd.Damage > 0);
             }
-            ShellData.RegisterRuntimeRadius(BulletType.APHE, 1.0f);   // 用户确认: APHE 实际爆炸半径 1km
-            MelonLogger.Msg("[FCS] 精准爆炸半径表已加载(ShellDefinition.ImpactRadius, APHE=1km 用户校准)");
+            ShellData.RegisterRuntimeRadius(BulletType.APHE, 5.0f);   // 用户确认: APHE 毁伤半径 5km
+            MelonLogger.Msg("[FCS] 精准爆炸半径表已加载(ShellDefinition.ImpactRadius, APHE=5km 用户校准)");
         }
         catch (Exception ex) {
             MelonLogger.Error($"[FCS] CacheShellRadiusTable failed: {ex.Message}");

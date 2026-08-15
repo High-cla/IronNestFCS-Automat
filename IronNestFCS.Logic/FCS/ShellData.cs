@@ -46,7 +46,7 @@ public static class ShellData
         BulletType.HE => 0.12f,
         BulletType.HCHE => 0.30f,
         BulletType.LE => 0.08f,   // 轻弹, 单点用; 半径与 AP 相同(用户确认)
-        BulletType.APHE => 1.0f, // 复合弹(用户确认: AphcheDeck.ImpactRadius=1)
+        BulletType.APHE => 5.0f, // 复合弹(用户确认: AphcheDeck.ImpactRadius=5)
         _ => 0f
     };
 
@@ -57,7 +57,7 @@ public static class ShellData
         BulletType.HE => 0.27f,
         BulletType.HCHE => 0.63f,
         BulletType.LE => 0.14f,   // 与 AP 相同(用户确认)
-        BulletType.APHE => 1.0f, // 特殊复合弹(用户确认)
+        BulletType.APHE => 5.0f, // 特殊复合弹(用户确认: 毁伤半径 5km, 友军禁区同步)
         _ => 0f
     };
 
