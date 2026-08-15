@@ -43,7 +43,7 @@ public class TacticalRadar
 
     public bool AutoPlaceMarkers { get; set; } = true;
     public List<TacticalDecider.TargetInfo> AliveHostiles { get; private set; } = new();
-    /// <summary>存活友军世界坐标(集群落点友军禁区检查用), Scan 时刷新。</summary>
+    /// <summary>存活友军世界坐标(友军禁区检查已删 2026-08-15, 现仅用于 allies 计数监控), Scan 时刷新。</summary>
     public List<Vector3> AllyPositions { get; private set; } = new();
     public int SweptCount => sweptIds.Count;
 

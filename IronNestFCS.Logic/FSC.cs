@@ -455,8 +455,7 @@ public class FSC
             if (Registry.IsHandledNear(o.WorldPos, 0f)) continue;
             cands.Add(o.WorldPos);
         }
-        var cl = ClusterSolver.Best(task.position, cands, ShellData.BlastRadiusKm(newType),
-            EntityLocator.AllyPositions, ShellData.FriendlySafeRadiusKm(newType));
+        var cl = ClusterSolver.Best(task.position, cands, ShellData.BlastRadiusKm(newType));
         if (cl is { Count: >= 2 }) {
             task.position = cl.Value.Impact;
             task.angel = Bearing(cl.Value.Impact);
@@ -1019,7 +1018,7 @@ public class FSC
     }
 
     /// <summary>
-    /// 集群收益分析: 对静态软目标 T, 求 HE/HCHE 最大可覆盖集群(MEC 圆心落点, 友军禁区)。
+    /// 集群收益分析: 对静态软目标 T, 求 APHE/HE/HCHE 最大可覆盖集群(MEC 圆心落点; 友军禁区检查已删)。
     /// 有集群(≥2) → 返回集群任务(位置提交, 打质心, 注册表按毁伤半径覆盖); 无 → null(调用方走单点)。
     /// 选择流程不动——只在"本应打 HE"的软目标上做升级。
     /// </summary>
@@ -1043,11 +1042,10 @@ public class FSC
             if (Registry.IsHandledNear(o.WorldPos, 0f)) continue;
             candidates.Add(o.WorldPos);
         }
-        var friendlies = EntityLocator.AllyPositions;
-
-        // 集群优先级: APHE(复合弹 Damage5 + 1km 半径, 装甲/软目标通吃) > HE > HCHE(仅软目标)
+        // 集群优先级: APHE(复合弹 Damage5 + 5km 半径, 装甲/软目标通吃) > HE > HCHE(仅软目标)
+        // 友军禁区检查已删(用户确认 2026-08-15): 大爆区不再被禁区挡。
         var aphe = ClusterSolver.Best(ti.WorldPos, candidates,
-            ShellData.BlastRadiusKm(BulletType.APHE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.APHE));
+            ShellData.BlastRadiusKm(BulletType.APHE));
 
         BulletType shell;
         Vector3 impact;
@@ -1056,9 +1054,9 @@ public class FSC
         else if (ti.IsArmored) return null;   // 装甲目标只有 APHE 能成簇(HE/HCHE 不穿甲), 无簇回单点(AP)
         else {
             var he = ClusterSolver.Best(ti.WorldPos, candidates,
-                ShellData.BlastRadiusKm(BulletType.HE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HE));
+                ShellData.BlastRadiusKm(BulletType.HE));
             var hche = ClusterSolver.Best(ti.WorldPos, candidates,
-                ShellData.BlastRadiusKm(BulletType.HCHE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HCHE));
+                ShellData.BlastRadiusKm(BulletType.HCHE));
             if (he.HasValue && he.Value.Count >= 2) { shell = BulletType.HE; impact = he.Value.Impact; coverCount = he.Value.Count; }
             else if (hche.HasValue && hche.Value.Count >= 2) { shell = BulletType.HCHE; impact = hche.Value.Impact; coverCount = hche.Value.Count; }
             else return null;

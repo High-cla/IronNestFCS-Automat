@@ -39,7 +39,7 @@ public static class ShellData
 
     /// <summary>硬编码兜底表(历史维基/实测校准, 2026-08-12)。
     /// 注意: 运行时精准表(ShellDefinition.ImpactRadius)正常加载时优先, 此表仅兜底。
-    /// APHE=1.0 与 AphcheDeck 注入定义 ImpactRadius=1f(用户确认) 统一——兜底路径不漂移。</summary>
+    /// APHE=5.0 与 AphcheDeck 注入定义 ImpactRadius=5f(用户确认) 统一——兜底路径不漂移。</summary>
     public static float HardcodedBlastRadiusKm(BulletType t) => t switch
     {
         BulletType.AP => 0.08f,
@@ -50,19 +50,9 @@ public static class ShellData
         _ => 0f
     };
 
-    /// <summary>杀伤包络(维基毁伤半径): 包络内即可能被杀伤——友军禁区基数, 集群覆盖不用它(致死半径更小)</summary>
-    public static float DamageRadiusKm(BulletType t) => t switch
-    {
-        BulletType.AP => 0.14f,
-        BulletType.HE => 0.27f,
-        BulletType.HCHE => 0.63f,
-        BulletType.LE => 0.14f,   // 与 AP 相同(用户确认)
-        BulletType.APHE => 5.0f, // 特殊复合弹(用户确认: 毁伤半径 5km, 友军禁区同步)
-        _ => 0f
-    };
-
-    /// <summary>友军禁区半径 = 杀伤包络 + 20% 余量(不赌包络边缘)</summary>
-    public static float FriendlySafeRadiusKm(BulletType t) => DamageRadiusKm(t) * 1.2f;
+    /// <summary>杀伤包络(km): 固定 0.5(用户确认 2026-08-15)。
+    /// 原为运行时 ImpactRadius 同源 + 硬编码表, 友军禁区检查已删, 此值仅作数据留存。</summary>
+    public static float DamageRadiusKm(BulletType t) => 0.5f;
 
     /// <summary>成本(申请点)。正式版: AP/HE=10, HCHE=18; APHE=5(用户确认)。</summary>
     public static int Cost(BulletType t) => t switch
