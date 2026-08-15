@@ -5,7 +5,7 @@
 
 ## OVERVIEW
 
-《铁巢：重炮模拟器》的 MelonLoader 全自动火控 Mod（IL2CPP），svr2kos2 FCS 的 deep-fork：扫描全图敌情 → 自动弹道解算/弹种选择/采购装填/瞄准击发。核心玩法：Numpad 0 全自动扫荡循环。无网页/HTTP（用户硬约束）。
+《铁巢：重炮模拟器》的 MelonLoader 全自动火控 Mod（IL2CPP），svr2kos2 FCS 的 deep-fork：扫描全图敌情 → 自动弹道解算/弹种选择/采购装填/瞄准击发。核心玩法：Numpad 0 全自动扫荡循环。
 
 ## 游戏固有约束（改代码前必读）
 
