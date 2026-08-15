@@ -70,7 +70,47 @@ public class PurchaseDeck {
         }
     }
 
+    /// <summary>解除限量卡(ATMC 等 MaxUses 有限)一次性限制: 台上卡充值到 99 次防耗尽移除;
+    /// 已被游戏移除的卡从定义表(AllDefinitions)重新生成(AddNewCardsToDeck)。限量弹无限使用。</summary>
+    private static void UnlimitCards() {
+        try {
+            var mgr = RequisitionConsoleManager.Instance;
+            if (mgr == null) return;
+            var onDeck = new HashSet<string>();
+            foreach (var card in mgr.GetAllCards()) {
+                var d = card.CurrentDefinition;
+                if (d == null) continue;
+                onDeck.Add(d.ID);
+                if (d.MaxUses > 0 && d.RemainingUses <= 1) {
+                    d.RemainingUses = 99;
+                    d.MaxUses = 99;
+                    MelonLogger.Msg($"[FCS] 限量卡 {d.ID} 已解除限制 (RemainingUses=99)");
+                }
+            }
+            if (mgr.AllDefinitions == null) return;
+            var missing = new Il2CppSystem.Collections.Generic.List<PunchcardDefinitionV2>();
+            foreach (var kv in mgr.AllDefinitions) {
+                var d = kv.Value;
+                if (d == null || d.MaxUses <= 0 || onDeck.Contains(d.ID)) continue;
+                d.RemainingUses = 99;
+                d.MaxUses = 99;
+                missing.Add(d);
+            }
+            if (missing.Count > 0) {
+                mgr.AddNewCardsToDeck(missing);
+                var ids = "";
+                foreach (var d in missing) ids += d.ID + ",";
+                MelonLogger.Msg($"[FCS] 限量卡重新生成: {ids.TrimEnd(',')}");
+            }
+        }
+        catch (Exception ex) {
+            MelonLogger.Error($"[FCS] UnlimitCards failed: {ex.Message}");
+        }
+    }
+
     public IEnumerator BuyShell(BulletType type, LeftRight leftRight) {
+        EnsureFunded();    // 强制购买: 点数注满
+        UnlimitCards();    // 限量卡充值/补卡(用尽消失的卡先重新生成, Rescan 才能发现)
         var card = bulletCards.GetValueOrDefault(type);
         if (card == null) {
             Rescan();   // 场景重建/首绑早于卡生成时自愈, 再试一次
@@ -99,6 +139,8 @@ public class PurchaseDeck {
     }
 
     public IEnumerator BuyPowders() {
+        EnsureFunded();    // 强制购买: 点数注满
+        UnlimitCards();    // 限量卡充值/补卡
         if (_powderCard == null) {
             Rescan();   // 场景重建/首绑早于卡生成时自愈, 再试一次
         }

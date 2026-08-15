@@ -403,12 +403,14 @@ public class FSC
     /// ponytail: 只列 STAR; 其他非杀伤弹(SMOKE 等)出现同样屏蔽再扩展。</summary>
     private static bool IsKillContract(ArtilleryTask t) => t.bulletType != BulletType.STAR;
 
-    /// <summary>弹种不可用回退链: LE/AP 未解锁 → HE(开局即有); HE 不可用 → HCHE。链尾返回自身。</summary>
+    /// <summary>弹种不可用回退链: LE/AP 未解锁 → HE(开局即有); HE 不可用 → HCHE;
+    /// ATMC 限量卡(RemainingUses=1)用尽买不到 → 降级 APHE(大范围杀伤替代)。链尾返回自身。</summary>
     private static BulletType FallbackShell(BulletType t) => t switch
     {
         BulletType.LE => BulletType.HE,
         BulletType.AP => BulletType.HE,
         BulletType.HE => BulletType.HCHE,
+        BulletType.ATMC => BulletType.APHE,
         _ => t
     };
 
@@ -558,7 +560,7 @@ public class FSC
                     else {
                         task.progress = Progress.Failed;
                         viable = false;
-                        MelonLogger.Error($"[FCS] {leftRight} 弹仓满且无可用杀伤弹({task.bulletType}), 任务失败");
+                        MelonLogger.Error($"[FCS] {leftRight} 弹种 {task.bulletType} 采购失败且弹仓无可用杀伤弹, 任务失败");
                     }
                 }
             }
