@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Il2CppTMPro;
 using IronNestFCS.Logic.FCS;
 using MelonLoader;
 using UnityEngine;
@@ -10,10 +9,10 @@ namespace IronNestFCS.Logic;
 /// <summary>
 /// 地图 overlay: 把"打击中"任务(LeftTask/RightTask/InFlight)的意图与动作画到地图上。
 /// 参考 KKTIME2024/IronNestFCS-Automat aa17af1 设计(overlay 功能, 后被其 Revert)。
-/// 元素:
-///   毁伤圈(描边+淡填充, 半径=task.BlastRadiusKm 注册表同源) + 圈标签(弹种/整数秒倒计时, 圆心两行)
-///   火力线(玩家→落点, 深红) + 火力线标签(距离/方位角, 顺线+自动翻转)
-///   移动目标: 前进路线(白虚线固定长) + 根部速度标签
+/// 元素(用户确认 2026-08-15: 白字标签已删, 红线粗细减半):
+///   毁伤圈(描边+淡填充, 半径=task.BlastRadiusKm 注册表同源)
+///   火力线(玩家→落点, 深红)
+///   移动目标: 前进路线(白虚线固定长)
 /// 1Hz tick, 按任务创建/销毁槽(dict), 对象挂 Draggable Surface 下(地图静态, 仅坐标帧一致)。
 /// 只读 FSC 公开 API, 保持 FSC 纯领域逻辑分离。Shutdown 销毁全部对象(热重载安全)。
 /// </summary>
@@ -25,16 +24,13 @@ public class MapOverlay
     private const float RingFillAlpha = 0.1f;       // 圈填充透明度(未击发)
     private const float RingFillAlphaFiring = 0.2f; // 圈填充透明度(在飞)
     private const float PathLengthKm = 1.5f;        // 移动路径固定可见长度(km)
-    private const float LineWidthWorld = 0.03f;     // 线宽(世界单位)
-    private const float LabelFontSize = 2f;         // 标签字号(世界空间 scale)
+    private const float LineWidthWorld = 0.015f;    // 线宽(世界单位, 用户确认减半)
     private const int CircleSegments = 48;
     private const int DashSegments = 6;             // 移动路径虚线段数
 
     private static readonly Color RingColor = new(0.75f, 0.15f, 0.15f);   // 深红偏亮(毁伤圈)
     private static readonly Color LineColor = new(0.55f, 0.05f, 0.05f);   // 深红(火力线, 同游戏语义)
     private static readonly Color PathColor = new(0.9f, 0.9f, 0.9f);      // 白(移动路径, 尺规语义)
-    /// <summary>文本躺平基准旋转(与 FcsSceneInteractor.AddText 一致): 先绕 X 90° 再绕 Z -90°。</summary>
-    private static readonly Quaternion BaseTextRotation = Quaternion.Euler(90f, 0f, 0f) * Quaternion.Euler(0f, 0f, -90f);
 
     private readonly FSC fcs;
     private readonly Transform? mapSurface;
@@ -52,11 +48,8 @@ public class MapOverlay
     private sealed class Slot {
         public LineRenderer? ring;
         public GameObject? fill;
-        public TextMeshPro? label;
         public LineRenderer? fireLine;
-        public TextMeshPro? fireLabel;
         public LineRenderer? path;
-        public TextMeshPro? speedLabel;
     }
 
     /// <summary>每帧调用, 内部 1Hz 节流。收集活动任务 → 更新/创建槽 → 销毁失效槽。</summary>
@@ -94,16 +87,12 @@ public class MapOverlay
     private Slot CreateSlot() => new() {
         ring = MakeLine("OverlayRing"),
         fill = MakeFill(),
-        label = MakeText("", "OverlayLabel"),
         fireLine = MakeLine("OverlayFireLine"),
-        fireLabel = MakeText("", "OverlayFireLabel"),
         path = MakeDashedLine("OverlayPath"),
-        speedLabel = MakeText("", "OverlaySpeedLabel"),
     };
 
     private void DestroySlot(Slot s) {
-        foreach (var go in new[] { s.ring?.gameObject, s.fill, s.label?.gameObject, s.fireLine?.gameObject,
-                                    s.fireLabel?.gameObject, s.path?.gameObject, s.speedLabel?.gameObject }) {
+        foreach (var go in new[] { s.ring?.gameObject, s.fill, s.fireLine?.gameObject, s.path?.gameObject }) {
             if (go == null) continue;
             tracked.Remove(go);
             Object.Destroy(go);
@@ -121,7 +110,6 @@ public class MapOverlay
         }
         Vector3 impact = fcs.MapTable.WorldToMapLocal(impactWorld);
         Vector3 player = fcs.MapTable.GetTurretLocal();
-        bool firing = t.Fired;
 
         // 毁伤圈: 描边环(半径=注册表同源数据)
         if (s.ring != null && t.BlastRadiusKm > 0f) {
@@ -137,16 +125,7 @@ public class MapOverlay
             float rMap = t.BlastRadiusKm / ShellData.KmPerWorldUnit;
             s.fill.transform.localPosition = impact;
             s.fill.transform.localScale = new Vector3(rMap * 2f, rMap * 2f, 1f);
-            SetFillAlpha(s.fill, firing ? RingFillAlphaFiring : RingFillAlpha);
-        }
-
-        // 圈标签: 弹种 / 整数秒倒计时, 圆心两行
-        if (s.label != null) {
-            int secs = firing
-                ? Mathf.Max(0, (int)(t.EstimatedToF - (Time.time - t.FiredAt)))
-                : (int)t.EstimatedToF;
-            s.label.text = $"{t.bulletType}\n{secs}s";
-            s.label.transform.localPosition = impact;
+            SetFillAlpha(s.fill, t.Fired ? RingFillAlphaFiring : RingFillAlpha);
         }
 
         // 火力线: 玩家 → 落点
@@ -156,33 +135,14 @@ public class MapOverlay
             s.fireLine.SetPosition(1, impact);
         }
 
-        // 火力线标签: 距离/方位角, 线中点, 顺线 + 自动翻转
-        if (s.fireLabel != null) {
-            var dir = impact - player;
-            float distKm = dir.magnitude * ShellData.KmPerWorldUnit;
-            float bearing = Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg;   // 0°=+Y, 顺时针, 同 SignedAngle 约定
-            if (bearing < 0) bearing += 360f;
-            s.fireLabel.text = $"{distKm:F1}km {bearing:F0}°";
-            s.fireLabel.transform.localPosition = (player + impact) * 0.5f;
-            float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-            if (angle > 90f && angle < 270f) angle += 180f;   // 自动翻转, 保证正读
-            s.fireLabel.transform.localRotation = BaseTextRotation * Quaternion.Euler(0f, 0f, angle);
-        }
-
-        // 移动目标: 前进路线(白虚线) + 根部速度标签
+        // 移动目标: 前进路线(白虚线)
         bool showPath = t.IsMoving && TargetLeadSolver.IsMoving(t.AimVel);
         if (showPath) {
             Vector3 now = fcs.MapTable.WorldToMapLocal(t.AimP0 + t.AimVel * (Time.time - t.AimStartTime));
             float lenMap = PathLengthKm / ShellData.KmPerWorldUnit;
             DrawDashed(s.path, now, now + t.AimVel.normalized * lenMap);
-            if (s.speedLabel != null) {
-                float kmh = t.AimVel.magnitude * ShellData.KmPerWorldUnit * 3600f;
-                s.speedLabel.text = $"{kmh:F0}km/h";
-                s.speedLabel.transform.localPosition = now + new Vector3(0f, 0.3f, 0f);
-            }
         } else {
             if (s.path != null) s.path.gameObject.SetActive(false);
-            if (s.speedLabel != null) s.speedLabel.gameObject.SetActive(false);
         }
     }
 
@@ -214,23 +174,6 @@ public class MapOverlay
             if (mat != null) mat.mainTexture = dashTexture;
         }
         return lr;
-    }
-
-    private TextMeshPro MakeText(string text, string name) {
-        var go = NewChild(name);
-        go.transform.localRotation = BaseTextRotation;   // 躺平贴地图平面
-        var tmp = go.AddComponent<TextMeshPro>();
-        if (tmp.font == null && TMP_Settings.defaultFontAsset != null)
-            tmp.font = TMP_Settings.defaultFontAsset;
-        tmp.text = text;
-        tmp.fontSize = LabelFontSize;
-        tmp.color = Color.white;
-        tmp.alignment = TextAlignmentOptions.Center;
-        tmp.enableWordWrapping = false;
-        // 深描边: 任何地形(含黑白航拍)上都可读
-        tmp.outlineWidth = 0.15f;
-        tmp.outlineColor = new Color(0f, 0f, 0f, 0.85f);
-        return tmp;
     }
 
     /// <summary>半透明红盘(毁伤圈填充)。Quad 1x1 在 XY 平面, 双面渲染防朝向反。</summary>
