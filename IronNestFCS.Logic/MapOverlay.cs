@@ -9,8 +9,8 @@ namespace IronNestFCS.Logic;
 /// <summary>
 /// 地图 overlay: 把"打击中"任务(LeftTask/RightTask/InFlight)的意图与动作画到地图上。
 /// 参考 KKTIME2024/IronNestFCS-Automat aa17af1 设计(overlay 功能, 后被其 Revert)。
-/// 元素(用户确认 2026-08-15: 白字标签已删, 红线粗细减半):
-///   毁伤圈(描边+淡填充, 半径=task.BlastRadiusKm 注册表同源)
+/// 元素(用户确认 2026-08-15: 白字标签已删, 红线粗细减半, 填充盘已删):
+///   毁伤圈(描边环, 半径=task.BlastRadiusKm 注册表同源)
 ///   火力线(玩家→落点, 深红)
 ///   移动目标: 前进路线(白虚线固定长)
 /// 1Hz tick, 按任务创建/销毁槽(dict), 对象挂 Draggable Surface 下(地图静态, 仅坐标帧一致)。
@@ -20,16 +20,12 @@ public class MapOverlay
 {
     // ==== 调参项(构建机实测) ====
     private const float TickInterval = 1f;
-    private const float RingWidthWorld = 0.05f;     // 圈描边宽(世界单位)
-    private const float RingFillAlpha = 0.1f;       // 圈填充透明度(未击发)
-    private const float RingFillAlphaFiring = 0.2f; // 圈填充透明度(在飞)
     private const float PathLengthKm = 1.5f;        // 移动路径固定可见长度(km)
     private const float LineWidthWorld = 0.015f;    // 线宽(世界单位, 用户确认减半)
     private const int CircleSegments = 48;
     private const int DashSegments = 6;             // 移动路径虚线段数
 
-    private static readonly Color RingColor = new(0.75f, 0.15f, 0.15f);   // 深红偏亮(毁伤圈)
-    private static readonly Color LineColor = new(0.55f, 0.05f, 0.05f);   // 深红(火力线, 同游戏语义)
+    private static readonly Color LineColor = new(0.55f, 0.05f, 0.05f);   // 深红(火力线/毁伤圈, 同游戏语义)
     private static readonly Color PathColor = new(0.9f, 0.9f, 0.9f);      // 白(移动路径, 尺规语义)
 
     private readonly FSC fcs;
@@ -47,7 +43,6 @@ public class MapOverlay
     /// <summary>一个任务对应的渲染槽(按任务创建/销毁)。</summary>
     private sealed class Slot {
         public LineRenderer? ring;
-        public GameObject? fill;
         public LineRenderer? fireLine;
         public LineRenderer? path;
     }
@@ -86,13 +81,12 @@ public class MapOverlay
 
     private Slot CreateSlot() => new() {
         ring = MakeLine("OverlayRing"),
-        fill = MakeFill(),
         fireLine = MakeLine("OverlayFireLine"),
         path = MakeDashedLine("OverlayPath"),
     };
 
     private void DestroySlot(Slot s) {
-        foreach (var go in new[] { s.ring?.gameObject, s.fill, s.fireLine?.gameObject, s.path?.gameObject }) {
+        foreach (var go in new[] { s.ring?.gameObject, s.fireLine?.gameObject, s.path?.gameObject }) {
             if (go == null) continue;
             tracked.Remove(go);
             Object.Destroy(go);
@@ -120,14 +114,6 @@ public class MapOverlay
                 s.ring.SetPosition(i, impact + new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * rMap);
             }
         }
-        // 填充盘
-        if (s.fill != null && t.BlastRadiusKm > 0f) {
-            float rMap = t.BlastRadiusKm / ShellData.KmPerWorldUnit;
-            s.fill.transform.localPosition = impact;
-            s.fill.transform.localScale = new Vector3(rMap * 2f, rMap * 2f, 1f);
-            SetFillAlpha(s.fill, t.Fired ? RingFillAlphaFiring : RingFillAlpha);
-        }
-
         // 火力线: 玩家 → 落点
         if (s.fireLine != null) {
             s.fireLine.positionCount = 2;
@@ -176,39 +162,11 @@ public class MapOverlay
         return lr;
     }
 
-    /// <summary>半透明红盘(毁伤圈填充)。Quad 1x1 在 XY 平面, 双面渲染防朝向反。</summary>
-    private GameObject MakeFill() {
-        var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        if (mapSurface != null) go.transform.SetParent(mapSurface, false);
-        var collider = go.GetComponent<Collider>();
-        if (collider != null) Object.Destroy(collider);
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-        if (mat.HasProperty("_Surface")) mat.SetFloat("_Surface", 1f);   // 透明
-        if (mat.HasProperty("_Blend")) mat.SetFloat("_Blend", 0f);        // alpha 混合
-        if (mat.HasProperty("_Cull")) mat.SetFloat("_Cull", 0f);          // 双面
-        mat.color = new Color(RingColor.r, RingColor.g, RingColor.b, RingFillAlpha);
-        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", mat.color);
-        var mr = go.GetComponent<MeshRenderer>();
-        if (mr != null) mr.material = mat;
-        tracked.Add(go);
-        return go;
-    }
-
     private GameObject NewChild(string name) {
         var go = new GameObject(name);
         if (mapSurface != null) go.transform.SetParent(mapSurface, false);
         tracked.Add(go);
         return go;
-    }
-
-    private static void SetFillAlpha(GameObject fill, float alpha) {
-        var mr = fill.GetComponent<MeshRenderer>();
-        if (mr == null || mr.material == null) return;
-        var c = mr.material.color;
-        c.a = alpha;
-        mr.material.color = c;
-        if (mr.material.HasProperty("_BaseColor"))
-            mr.material.SetColor("_BaseColor", c);
     }
 
     /// <summary>白/透明条纹虚线贴图(LineRenderer Tile 模式用)。</summary>
