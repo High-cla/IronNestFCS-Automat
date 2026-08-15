@@ -406,6 +406,41 @@ public class FSC
             if (ShellData.BlastRadiusKm(t) > 0f && t != want) return t;
         return null;
     }
+
+    /// <summary>弹种切换后重算: 毁伤半径 + 集群落点/覆盖。
+    /// 单点任务(有 entityId)落点=目标位置不动, 仅半径更新; 移动集群按新半径过滤覆盖成员
+    /// (落点由领队+偏移随动不变); 静态集群以原落点为焦点按新半径重求最大集群(MEC 圆心作新落点),
+    /// 找不到 ≥2 集群则保持原落点——覆盖可能减少, 但"有弹就打"不空手。</summary>
+    private void ApplyShellFallback(ArtilleryTask task) {
+        var newType = task.bulletType;
+        task.BlastRadiusKm = ShellData.BlastRadiusKm(newType);
+        if (task.entityId.Length > 0 || EntityLocator == null) return;   // 单点任务, 落点不变
+        if (task.ClusterMembers != null) {
+            // 移动集群: 覆盖成员按新半径过滤
+            float blastKm = ShellData.BlastRadiusKm(newType);
+            task.ClusterMembers = task.ClusterMembers
+                .Where(id => EntityLocator.TryGetMotion(id, out var p, out _)
+                             && (p - task.position).magnitude * ShellData.KmPerWorldUnit <= blastKm)
+                .ToList();
+            return;
+        }
+        // 静态集群: 重求覆盖
+        var cands = new List<Vector3>();
+        foreach (var o in EntityLocator.AliveHostiles) {
+            if (o.IsArmored || o.IsUnderground) continue;
+            if (Registry.IsHandled(o.EntityId)) continue;
+            if (Registry.IsHandledNear(o.WorldPos, 0f)) continue;
+            cands.Add(o.WorldPos);
+        }
+        var cl = ClusterSolver.Best(task.position, cands, ShellData.BlastRadiusKm(newType),
+            EntityLocator.AllyPositions, ShellData.FriendlySafeRadiusKm(newType));
+        if (cl is { Count: >= 2 }) {
+            task.position = cl.Value.Impact;
+            task.angel = Bearing(cl.Value.Impact);
+            task.distance = DistKm(cl.Value.Impact);
+            MelonLogger.Msg($"[FCS] 集群回退重算: {newType} 落点{task.distance:F2}km 覆盖{cl.Value.Count}个");
+        }
+    }
     /// <summary>把队首任务派给空闲炮管，直到没有空闲炮管或队列空。</summary>
     private void TryDispatch() {
         while (_taskQueue.Count > 0) {
@@ -470,34 +505,43 @@ public class FSC
         yield return _deskLock.Acquire();
         try {
             task.progress = Progress.SelectingBullet;
-            // 弹仓里没有目标弹种则采购（采购台也是共享硬件，放在锁内）。
-            // 未解锁弹种(如 LE)采购点击无效——采购后核验弹是否真进舱, 未进则沿回退链换弹重试,
-            // 避免"LE 永远买不到 → 任务失败 → 重新派发再试 LE"的死循环。
+            // 弹种优先级: 弹仓有目标弹种直接用; 没有且有空位 → 采购;
+            // 买不到沿回退链换弹(换弹前先查弹仓有没有现成的, 有就不买); 仍无 → 复用弹仓已有杀伤弹;
+            // 全无 → 失败(带日志)。弹种最终切换后统一重算毁伤半径 + 集群落点/覆盖(ApplyShellFallback)。
+            var originalShell = task.bulletType;
             if (!gunSys.HaveBulletInCylinder(task.bulletType)) {
-                // 弹仓有货先复用: 任务弹种缺货时沿回退链找弹仓内已有弹种(如 HCHE 集群任务遇 HE 满仓),
-                // 兜底任意有爆区弹种——有弹就打, 不因弹种不匹配干等采购/直接失败。
-                var reuse = PickReusableShell(task.bulletType, gunSys.ShellTypesInCylinder());
-                if (reuse != null) {
-                    MelonLogger.Msg($"[FCS] {leftRight} 弹仓无 {task.bulletType}, 改用炮架已有 {reuse}");
-                    task.bulletType = reuse.Value;
-                    task.BlastRadiusKm = ShellData.BlastRadiusKm(reuse.Value);
-                }
-                else if (!gunSys.HaveEmptyShellInCylinder()) {
-                    task.progress = Progress.Failed;
-                    viable = false;
-                    MelonLogger.Error($"[FCS] {leftRight} 弹仓满且无可用杀伤弹({task.bulletType}), 任务失败");
-                }
-                else {
+                if (gunSys.HaveEmptyShellInCylinder()) {
+                    // 采购循环: 未解锁弹种(如 LE)采购点击无效——采购后核验弹是否真进舱,
+                    // 未进则沿回退链换弹重试, 避免"LE 永远买不到 → 任务失败 → 重新派发再试 LE"的死循环。
                     for (var attempt = 0; attempt < 4; attempt++) {
                         yield return _purchaseDeck.BuyShell(task.bulletType, leftRight);
                         if (gunSys.HaveBulletInCylinder(task.bulletType)) break;   // 到货
                         var next = FallbackShell(task.bulletType);
                         if (next == task.bulletType) break;   // 链尽头, 不再换
+                        if (gunSys.HaveBulletInCylinder(next)) {
+                            MelonLogger.Msg($"[FCS] {leftRight} 弹种 {task.bulletType} 买不到, 弹仓已有 {next} 直接使用");
+                            task.bulletType = next;
+                            break;
+                        }
                         MelonLogger.Msg($"[FCS] {leftRight} 弹种 {task.bulletType} 不可用(未解锁?), 回退 {next}");
                         task.bulletType = next;
                     }
                 }
+                // 采购后目标弹种仍不在弹仓(买不到/满仓): 复用弹仓已有杀伤弹
+                if (!gunSys.HaveBulletInCylinder(task.bulletType)) {
+                    var reuse = PickReusableShell(task.bulletType, gunSys.ShellTypesInCylinder());
+                    if (reuse != null) {
+                        MelonLogger.Msg($"[FCS] {leftRight} 弹仓无 {task.bulletType}, 改用炮架已有 {reuse}");
+                        task.bulletType = reuse.Value;
+                    }
+                    else {
+                        task.progress = Progress.Failed;
+                        viable = false;
+                        MelonLogger.Error($"[FCS] {leftRight} 弹仓满且无可用杀伤弹({task.bulletType}), 任务失败");
+                    }
+                }
             }
+            if (task.bulletType != originalShell) ApplyShellFallback(task);   // 弹种切换: 半径+落点重算
         }
         finally {
             _deskLock.Release();

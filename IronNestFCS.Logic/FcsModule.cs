@@ -2,6 +2,7 @@ using Il2Cpp;
 using IronNestFCS.Abstractions;
 using IronNestFCS.Logic.FCS;
 using MelonLoader;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Object = UnityEngine.Object;
@@ -30,7 +31,22 @@ public class FcsModule : IFcsModule
         // APHE 特殊复合弹卡: 每局注入(幂等)。等 PunchcardRuntime 就绪, 由 AphcheDeck 内部轮询。
         // 所有场景都试注入, 找不到 Requisition Console 的素材卡时会安全退出。
         fcs.StartTrackedCoroutine(AphcheDeck.AddCardIfMissing(fcs.PurchaseDeck));
+        if (bound) ProbePunchcardRuntime();   // 调试: 打印游戏购买类型成员, 供"强制购买/点数脱钩"分析
         return bound;
+    }
+
+    /// <summary>调试: 运行时反射打印 PunchcardRuntime(征用台购买卡)的字段/方法/属性签名,
+    /// 供"强制购买/与征用点数脱钩"分析游戏购买机制(点数字段/购买方法在哪)。纯只读反射, 不注册新 IL2CPP 类型。</summary>
+    private static void ProbePunchcardRuntime() {
+        var t = typeof(PunchcardRuntime);
+        MelonLogger.Msg($"[FCS] Probe {t.FullName} base={t.BaseType?.FullName} 接口={string.Join(",", t.GetInterfaces().Select(i => i.Name))}");
+        foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            MelonLogger.Msg($"[FCS]   field: {f.FieldType.Name} {f.Name}");
+        foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            MelonLogger.Msg($"[FCS]   prop: {p.PropertyType.Name} {p.Name}{(p.CanRead ? " {get;}" : "")}{(p.CanWrite ? " {set;}" : "")}");
+        foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                 .Where(m => !m.IsSpecialName))
+            MelonLogger.Msg($"[FCS]   method: {m.ReturnType.Name} {m.Name}({string.Join(", ", m.GetParameters().Select(pa => pa.ParameterType.Name + " " + pa.Name))})");
     }
 
     /// <summary>任一炮管退膛 → 扫描 → 清空队列 → 给每门空闲炮管各派一个目标。扫荡中每 5s 也跑一次，用于在飞窗口到期后恢复派发。</summary>
