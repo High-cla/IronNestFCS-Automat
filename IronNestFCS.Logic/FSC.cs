@@ -61,6 +61,10 @@ public class FSC
     /// <summary>齐射方位容差(度): 两管目标方位差小于此值视为同方向, 放行双管齐射(玩家拉一次扳机=双弹)。
     /// 过严=丢齐射(退化为串行); 过松=近距目标误齐射。0.1°@10km≈17m。实战校准。</summary>
     private const float SalvoBearingToleranceDeg = 0.1f;
+    /// <summary>齐射会合超时(秒): 非持锁者等伙伴武装的最长时间。伙伴仍在装填/瞄准/武装则继续等
+    /// (等待不增加总耗时——串行下伙伴也是这个时刻才响, 换来的是双弹齐出);
+    /// 超时后兜底抢锁自行击发, 防伙伴异常卡死时永久挂起。</summary>
+    private const float SalvoWaitTimeoutSeconds = 60f;
 
     // 连续瞄准几何缓存(Draggable Surface + turret), 避免每帧 GameObject.Find
     private Transform? _mapSurface;
@@ -643,6 +647,7 @@ public class FSC
                 // 臂杆按下与 5 个确认并行(开关纯 0/1 flag, 一口气点完, 在臂杆保持期内完成)。
                 // 臂杆自动拉下 = 该炮管就绪(此刻方位/仰角已收敛, 不会在错误方向角臂下)
                 yield return TriggerConsole.ArmWithFastConfirm(leftRight);
+                task.Armed = true;   // 齐射会合: 武装完成标记, 伙伴据此决定何时击发(双管都武装才齐射)
                 if (turret.Acquired) {
                     // 持锁者(或唯一任务): 复检对齐后击发——全局扳机带出所有已武装管(齐射由它一并带出)
                     if (_sceneInteractor.AutoFire || task.forceFire) {
@@ -662,20 +667,45 @@ public class FSC
                         }
                     }
                 } else {
-                    // 非持锁者(同方位齐射): 已武装, 等持锁者击发带自己(直接 Fire 会双重 AddEnergy)。
-                    // 持锁者瞄准失败放弃(释放锁) → 自己 TryAcquire 兜底抢锁, 防 AutoFire 下永久挂起。
-                    while (!gunSys.IsPendingReload() && !TryAcquireTurret(turret)) {
+                    // 非持锁者(同方位齐射): 已武装, 与伙伴会合后齐射(持锁者 Fire 全局带出双弹)。
+                    // 会合规则: 伙伴(另一管当前任务)也已武装 → 抢锁击发(双管都武装, 一发 Fire 双弹齐出);
+                    // 伙伴还在装填/瞄准/武装 → 继续等(不抢锁——抢早了伙伴未武装, 齐射退化成两发串行);
+                    // 伙伴任务消失/失败/取消/已打完/方位发散或超时 → 配对破裂, 兜底抢锁自行击发。
+                    var salvoWaitStart = Time.time;
+                    while (!gunSys.IsPendingReload()) {
+                        var other = leftRight == LeftRight.Left ? RightTask : LeftTask;
+                        var otherReady = other != null && other != task
+                            && other.progress == Progress.WaitingForFire
+                            && other.Armed && !other.Canceled;
+                        var pairBroken = other == null || other == task
+                            || other.progress is Progress.Failed or Progress.Canceled
+                                or Progress.Finished or Progress.BackToIdle
+                            || !SameBearingAsOther();
+                        // 伙伴已武装 → 抢锁击发(抢不到继续等: 伙伴可能先抢到, 其 Fire 全局带出本管)
+                        if (otherReady && TryAcquireTurret(turret)) {
+                            MelonLogger.Msg($"[FCS] {leftRight} 齐射会合: 伙伴已武装, 双弹齐出");
+                            break;
+                        }
+                        // 配对破裂/超时 → 兜底抢锁自行击发(伙伴不再会带自己)
+                        if ((pairBroken || Time.time - salvoWaitStart > SalvoWaitTimeoutSeconds)
+                            && TryAcquireTurret(turret)) break;
                         TryComputeAimTargets(task, out var b, out var e);
-                        // 先来后到: 持锁者击发段独占方位, 非持锁者让舵(同方位齐射共享炮塔, 方位跟随持锁者复检)
+                        // 先来后到: 锁被持锁者占用时让舵; 空闲时追方位(伙伴装填期后台也在追, 同方位值≈相同)
                         if (!_turretLock.IsHeld) Turret.SetDesiredRotation(b);
                         gunSys.SetElevationTarget(e);
                         yield return null;
                     }
                     if (!gunSys.IsPendingReload()) {
-                        // 兜底抢到锁(持锁者已放弃) → 复检对齐后自己击发
+                        // 兜底抢到锁(伙伴放弃/配对破裂) → 复检对齐后自己击发
                         if (_sceneInteractor.AutoFire || task.forceFire) {
                             var recheckStart = Time.time;
-                            while (!AlignOk(task, gunSys, AimToleranceDeg) && Time.time - recheckStart < 5f) yield return null;
+                            while (!AlignOk(task, gunSys, AimToleranceDeg) && Time.time - recheckStart < 5f) {
+                                // 等待期炮塔可能被伙伴后台转走(任务易主) → 复检期主动追回方位
+                                TryComputeAimTargets(task, out var b, out var e);
+                                Turret.SetDesiredRotation(b);
+                                gunSys.SetElevationTarget(e);
+                                yield return null;
+                            }
                             TriggerConsole.Fire();
                             yield return gunSys.WaitFire();
                         } else {

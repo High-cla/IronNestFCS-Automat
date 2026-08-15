@@ -33,6 +33,9 @@ public class ArtilleryTask {
     public TaskSource Source = TaskSource.Auto;
     /// <summary>切手动时置位: 未开始装填的自动任务干净放弃, 不碰炮膛</summary>
     public bool Canceled;
+    /// <summary>臂杆已拉下(击发段武装完成)。同方位齐射会合标记: 伙伴枪据此判断双方都就绪才击发,
+    /// 否则先到者抢锁单发, 齐射退化成两发串行。任务对象一次一发, 默认 false 无需清理。</summary>
+    public bool Armed;
     /// <summary>已击发(Registry 飞行窗口计时依据; 未击发的任务结束时 Release 登记)</summary>
     public bool Fired;
     /// <summary>解算后置位: 射表估计飞行时间(秒)。面板倒计时依据, 归零=估计落地。</summary>
