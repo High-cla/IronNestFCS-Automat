@@ -50,9 +50,9 @@ public static class ShellData
         _ => 0f
     };
 
-    /// <summary>杀伤包络(km): 固定 0.5(用户确认 2026-08-15)。
+    /// <summary>杀伤包络(km): APHE=0.2(用户确认 2026-08-15), 其余弹种固定 0.5。
     /// 原为运行时 ImpactRadius 同源 + 硬编码表, 友军禁区检查已删, 此值仅作数据留存。</summary>
-    public static float DamageRadiusKm(BulletType t) => 0.5f;
+    public static float DamageRadiusKm(BulletType t) => t == BulletType.APHE ? 0.2f : 0.5f;
 
     /// <summary>成本(申请点)。正式版: AP/HE=10, HCHE=18; APHE=5(用户确认)。</summary>
     public static int Cost(BulletType t) => t switch
