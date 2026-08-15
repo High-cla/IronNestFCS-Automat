@@ -986,12 +986,12 @@ public class FSC
             else return null;
         }
 
-        // 实测毁伤半径: 落点 1km 内所有存活目标距落点的径向距离 + 覆盖数。
+        // 实测毁伤半径: 落点 0.95km 内所有存活目标距落点的径向距离 + 覆盖数(计算半径用户调校)。
         // 配合 Reconcile 击杀日志读出真实杀伤半径(维基 0.27/0.63 疑似偏大——覆盖成员没死)。
         var nearby = EntityLocator.AliveHostiles
-            .Where(h => (h.WorldPos - impact).magnitude * ShellData.KmPerWorldUnit < 1.0f)
+            .Where(h => (h.WorldPos - impact).magnitude * ShellData.KmPerWorldUnit < 0.95f)  // 计算半径(用户调校 2026-08-15: 0.95km, 判定与实战一致)
             .Select(h => $"{h.EntityId}@{(h.WorldPos - impact).magnitude * ShellData.KmPerWorldUnit:F2}km");
-        MelonLogger.Msg($"[FCS] 集群 {ti.EntityId}: {shell} 落点{DistKm(impact):F2}km 覆盖{coverCount}个{(ti.IsMoving ? " [移动]" : "")} | 1km内: {string.Join(" ", nearby)}");
+        MelonLogger.Msg($"[FCS] 集群 {ti.EntityId}: {shell} 落点{DistKm(impact):F2}km 覆盖{coverCount}个{(ti.IsMoving ? " [移动]" : "")} | 0.95km内: {string.Join(" ", nearby)}");
 
         // 移动集群覆盖成员: 击发时按 entityId 登记——爆区几何以落点为中心, 车列在落点后方,
         // 在飞期间几何屏蔽拦不住, 需按实体屏蔽(死亡由 Reconcile 释放)。

@@ -128,7 +128,7 @@ public class MapOverlay
         if (showPath) {
             Vector3 now = fcs.MapTable.WorldToMapLocal(t.AimP0 + t.AimVel * (Time.time - t.AimStartTime));
             float lenMap = PathLengthKm / ShellData.KmPerWorldUnit;
-            DrawDashed(s.path, now, now + t.AimVel.normalized * lenMap);
+            if (s.path != null) DrawDashed(s.path, now, now + t.AimVel.normalized * lenMap);
         } else {
             if (s.path != null) s.path.gameObject.SetActive(false);
         }
