@@ -1023,17 +1023,18 @@ public class FSC
     /// </summary>
     public ArtilleryTask? TryBuildClusterTask(TacticalDecider.TargetInfo ti, int targetId)
     {
-        if (ti.IsArmored || ti.IsUnderground) return null;   // 只软目标(装甲/地下不走集群)
+        if (ti.IsUnderground) return null;   // 地下工事不集群
         if (EntityLocator == null) return null;
 
-        // 候选 = 未处理软目标世界坐标(含已派发的覆盖区过滤)。
+        // 候选 = 未处理目标世界坐标(含已派发的覆盖区过滤)。
+        // 装甲目标也可成簇: APHE 复合弹(Damage5, 半径1km)可穿甲, 一发清多辆坦克。
         // 移动集群(列车/车队): 编队刚体——成员与 T 同向同速才可同簇(集群几何随动不变),
         // 快照位置成簇, 任务带 IsMoving 快照, 现有提前量路径把整簇带到命中点。
         var candidates = new List<Vector3>();
         foreach (var o in EntityLocator.AliveHostiles)
         {
             if (o.EntityId == ti.EntityId) continue;
-            if (o.IsArmored || o.IsUnderground) continue;
+            if (o.IsUnderground) continue;
             if (o.IsMoving != ti.IsMoving) continue;
             if (o.IsMoving && (o.Velocity - ti.Velocity).magnitude * ShellData.KmPerWorldUnit > 0.002f) continue;
             if (Registry.IsHandled(o.EntityId)) continue;
@@ -1042,21 +1043,24 @@ public class FSC
         }
         var friendlies = EntityLocator.AllyPositions;
 
-        // 集群优先级: APHE(便宜+Damage 2) > HE > HCHE(精准半径: APHE/HE=0.25, HCHE=0.55km)
+        // 集群优先级: APHE(复合弹 Damage5 + 1km 半径, 装甲/软目标通吃) > HE > HCHE(仅软目标)
         var aphe = ClusterSolver.Best(ti.WorldPos, candidates,
             ShellData.BlastRadiusKm(BulletType.APHE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.APHE));
-        var he = ClusterSolver.Best(ti.WorldPos, candidates,
-            ShellData.BlastRadiusKm(BulletType.HE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HE));
-        var hche = ClusterSolver.Best(ti.WorldPos, candidates,
-            ShellData.BlastRadiusKm(BulletType.HCHE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HCHE));
 
         BulletType shell;
         Vector3 impact;
         int coverCount;
         if (aphe.HasValue && aphe.Value.Count >= 2) { shell = BulletType.APHE; impact = aphe.Value.Impact; coverCount = aphe.Value.Count; }
-        else if (he.HasValue && he.Value.Count >= 2) { shell = BulletType.HE; impact = he.Value.Impact; coverCount = he.Value.Count; }
-        else if (hche.HasValue && hche.Value.Count >= 2) { shell = BulletType.HCHE; impact = hche.Value.Impact; coverCount = hche.Value.Count; }
-        else return null;
+        else if (ti.IsArmored) return null;   // 装甲目标只有 APHE 能成簇(HE/HCHE 不穿甲), 无簇回单点(AP)
+        else {
+            var he = ClusterSolver.Best(ti.WorldPos, candidates,
+                ShellData.BlastRadiusKm(BulletType.HE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HE));
+            var hche = ClusterSolver.Best(ti.WorldPos, candidates,
+                ShellData.BlastRadiusKm(BulletType.HCHE), friendlies, ShellData.FriendlySafeRadiusKm(BulletType.HCHE));
+            if (he.HasValue && he.Value.Count >= 2) { shell = BulletType.HE; impact = he.Value.Impact; coverCount = he.Value.Count; }
+            else if (hche.HasValue && hche.Value.Count >= 2) { shell = BulletType.HCHE; impact = hche.Value.Impact; coverCount = hche.Value.Count; }
+            else return null;
+        }
 
         // 实测毁伤半径: 落点 1km 内所有存活目标距落点的径向距离 + 覆盖数。
         // 配合 Reconcile 击杀日志读出真实杀伤半径(维基 0.27/0.63 疑似偏大——覆盖成员没死)。
@@ -1074,7 +1078,7 @@ public class FSC
             members = new List<string>();
             foreach (var o in EntityLocator.AliveHostiles)
             {
-                if (o.IsArmored || o.IsUnderground || !o.IsMoving) continue;
+                if (o.IsUnderground || !o.IsMoving) continue;
                 if ((o.Velocity - ti.Velocity).magnitude * ShellData.KmPerWorldUnit > 0.002f) continue;
                 if ((o.WorldPos - impact).magnitude * ShellData.KmPerWorldUnit <= blastKm)
                     members.Add(o.EntityId);
