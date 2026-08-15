@@ -10,15 +10,15 @@ namespace IronNestFCS.Logic.FCS;
 /// <summary>
 /// APHE 特殊复合弹卡：每局向 Requisition Console 注入一张 APShellMod 卡（复制 APShell + 借 HCHEShell 特效）。
 /// 幂等：场景中已存在 APShellMod 卡则跳过。由 FcsModule.Initialize 通过 StartTrackedCoroutine 启动。
-/// 属性（用户确认）：ImpactRadius=5, Damage=5, ShellId=APHE, Cost=5。
+/// 属性（用户确认）：ImpactRadius=1, Damage=5, ShellId=APHE, Cost=5（参考 KKTIME e783673）。
 /// </summary>
 public static class AphcheDeck
 {
     /// <summary>注入卡的稳定 ID，TryBind/幂等检测都用它。</summary>
     public const string CardId = "APShellMod";
 
-    /// <summary>属性常量（用户确认: 毁伤半径 5km, Damage 5）。</summary>
-    public const float ImpactRadius = 5f;
+    /// <summary>属性常量（用户确认: 毁伤半径 1km, Damage 5。参考 KKTIME e783673: ImpactRadius=1 Damage=5 BlastRadius=0.5 Cost=5）。</summary>
+    public const float ImpactRadius = 1f;
     public const int ShellDamage = 5;
 
     /// <summary>
