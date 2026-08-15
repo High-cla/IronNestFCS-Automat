@@ -46,6 +46,7 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 - **弹道自动解算**：自动设定装药、弹种、仰角与方向角
 - **智能弹种选择**：装甲/工事/弹药库/地下等硬目标自动打 AP，软目标打 HE，尊重目标 `ImmuneShells` 属性避开无效弹种
 - **优先级排序**：6 级目标优先级 — FDC(6) > 火炮(5) > 弹药库/高价值/3★(4) > 装甲/工事/1★(3) > 普通(2) > 其他(1)。同级按综合时间成本排序（距离×2.56 + 角度差×0.30）
+
 铁巢坐标自动更新（TurretLocation 真实炮塔基准）
 敌人强制可见（VisibilityGroup.alpha→1 + State 0x80 清除）
 炮塔旋转重构(核心)
