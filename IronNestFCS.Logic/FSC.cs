@@ -131,7 +131,7 @@ public class FSC
         MelonLogger.Msg("[FCS] Initialize: " + (IsBound ? "success" : "failed"));
         if (IsBound) {
             CacheAimGeometry();   // 连续瞄准几何缓存(一次, 避免每帧 GameObject.Find)
-            CacheShellRadiusTable();   // 精准爆炸半径表(ShellDefinition.ImpactRadius)
+            CacheKillShellTable();   // 杀伤弹判定表(ShellDefinition.Damage)
             // 驻留装药补给协程:保证装药充足,减少任务内等待购买。
             _runningCoroutines.Add(MelonCoroutines.Start(ReplenishPowderLoop()));
         }
@@ -139,22 +139,20 @@ public class FSC
         return IsBound;
     }
 
-    /// <summary>从已加载弹种定义(ScriptableObject)填充精准毁伤半径表 + 杀伤弹判定。
-    /// 实测开局 21 弹种定义全部已加载(Resources.FindObjectsOfTypeAll); 缺的定义回退硬编码表。
-    /// 全部弹种(含 APHE)均读运行时精准值(ShellDefinition.ImpactRadius); 缺的定义回退硬编码表。</summary>
-    private static void CacheShellRadiusTable() {
+    /// <summary>从已加载弹种定义(ScriptableObject)填充杀伤弹判定(Damage>0, STAR/TEAR/WP 非杀伤)。
+    /// 实测开局 21 弹种定义全部已加载(Resources.FindObjectsOfTypeAll); 未枚举的走历史黑名单。</summary>
+    private static void CacheKillShellTable() {
         try {
             foreach (var sd in Resources.FindObjectsOfTypeAll<ShellDefinition>()) {
                 if (sd == null || sd.ShellId == null) continue;
                 var id = sd.ShellId.Replace("PLCM", "PCLM");
                 if (!Enum.TryParse(id, out BulletType t)) continue;
-                ShellData.RegisterRuntimeRadius(t, sd.ImpactRadius);
                 ShellData.RegisterKillShell(t, sd.Damage > 0);
             }
-            MelonLogger.Msg("[FCS] 精准爆炸半径表已加载(ShellDefinition.ImpactRadius)");
+            MelonLogger.Msg("[FCS] 杀伤弹判定表已加载(ShellDefinition.Damage)");
         }
         catch (Exception ex) {
-            MelonLogger.Error($"[FCS] CacheShellRadiusTable failed: {ex.Message}");
+            MelonLogger.Error($"[FCS] CacheKillShellTable failed: {ex.Message}");
         }
     }
 
