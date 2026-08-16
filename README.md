@@ -1,9 +1,12 @@
 # IronNestFCS-Automat
+
 [简体中文](#简体中文) | [English](#english)
-https://github.com/FooYou2497/Iron_Nest_MelonLoader_Mods
+
 基于 [svr2kos2](https://github.com/svr2kos2) FCS 的全自动火控 Mod（战术雷达参考 [gxpppp](https://github.com/gxpppp/IronNestFCS) 的实现），为 *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)* 的重型炮塔加入一套**全自动火控系统**：按下 Numpad 0，剩下的交给铁巢！
 
 A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar inspired by [gxpppp](https://github.com/gxpppp/IronNestFCS)) — a **fully automatic Fire Control System** for *[Iron Nest: Heavy Turret Simulator](https://store.steampowered.com/app/4300500/)*: press Numpad 0 and let the mod handle the rest.
+
+---
 
 ## 简体中文
 
@@ -18,49 +21,52 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 | 维度 | svr2kos2 原版 | 本仓库 |
 | --- | --- | --- |
 | 炮塔旋转 | 后台协程抢 `_turretLock`，**旋转全程独占座圈**，另一管排队等 | **旋转全程锁外并行**——双管同时转方位，仅击发瞬间串行（防双管齐射） |
-| 同方位齐射 | 无，持锁者专权，一管击发时另一管只能等 | **齐射门**：两管目标方位差 ≤0.1°（移动目标限同实体）放行双弹齐射，如 AP+HE 同目标同时出膛 |
+| 方位驱动权 | 双管异目标时并行驱动共享炮塔（后写者赢，来回反向震荡） | **单主驱动**：先到先得 `_bearingDriver`，另一管让舵只追仰角；击发段持锁者最高优先级；弹打出即放手，不等回位 |
+| 同方位齐射 | 无，持锁者专权，一管击发时另一管只能等 | **齐射门 + 会合**：两管目标方位差 ≤0.1°（移动目标限同实体）放行双弹齐射；非持锁者武装后等伙伴也武装才击发（超时 60s 兜底自击） |
 | 装填期旋转 | 装填期间不转方位 | **装填期立即转**——静态目标提前到位，触发提前 + 全速旋转（不每帧重写目标干扰速度平滑） |
 | 射击基准 | `Player Turret Piece`（可拖动标记，会随拖动漂移） | **铁巢坐标自动更新**——真实炮塔基准（`TurretLocation`）+ **每 5s 刷新自愈**（场景晚就绪/紧急拖动后自动校正） |
-| APHE 复合弹卡 | 无 | **每局自动注入 `APShellMod` 卡**（ImpactRadius=1 / Damage=5 / BlastRadius=0.5km / Cost=5），并入现有 APHE 枚举，幂等跳过已存在 |
+| 集群作战 | 无 | **集群解算**：软目标 HE/HCHE 按 MEC 圆心落点，集群优先 APHE；移动集群按实体屏蔽成员；覆盖判定半径 0.95km 实战调校 |
+| APHE 复合弹卡 | 无 | **每局自动注入 `APShellMod` 卡**（ImpactRadius=1km / Damage=5 / Cost=5），并入现有 APHE 枚举，幂等跳过已存在 |
+| 强制购买 | 受征用点数与限量卡限制 | **与征用点数脱钩**：采购点击前自动注满点数，限量卡 RemainingUses/MaxUses 充至 99，永不缺弹 |
 | 击发确认 | 5 个确认台顺序点击（就位→发射窗口长） | **确认与臂杆并行**——臂杆按下期间 0.01s 连点全部确认，就位→发射窗口 ~2.2s→~1.2s |
 | 敌人可见 | 依赖视野/探测 | **强制可见**：`VisibilityGroup.alpha→1` + `State` 0x80 清除，扫描不依赖视野 |
+| 地图 Overlay | 无 | **毁伤圈可视化**：落点深红描边环（半径=毁伤半径，与判定同源）+ 火力线 + 移动目标白虚线 |
+| 爆炸半径 | 静态硬编码 | **硬编码确定值**（APHE=0.95km 用户调校）——集群/覆盖判定不随场景 ShellDefinition 漂移 |
 | 死代码 | — | 移除 ~209 行（`GameStateWatcher` 整类等） |
 
 ### 核心功能
 
 #### Numpad 0 全自动扫荡（核心玩法）
+
 - 按 **Numpad 0** 启动/停止自动扫荡，开启后无需任何手动操作（可在桌上面板上开启 Auto Fire 自动完成最后的击发动作）：扫描 → 决策 → 打击 → 补弹 → 再扫描，循环不止
 - **无小键盘的键盘？按 Ctrl+0** 效果相同（手动打击 Numpad 1-4 也备有 Ctrl+1-4）；**手柄玩家按 `Select` 切换**
 - 雷达直接读取游戏 `FireMission.Entities` 目标注册表
 - 双炮并行调度：任务自动派给空闲炮管，退膛完成自动接力
-- 缺弹自动采购
+- 缺弹自动采购（强制购买，与征用点数脱钩）
 - 蒸汽泄漏自动处理：开火后自动检测泄漏，旋紧阀门
 - 操作员只需要操作咖啡机，并欣赏唱片机音乐
 
 #### 战术决策
-- **弹道自动解算**：自动设定装药、弹种、仰角与方向角
-- **智能弹种选择**：装甲/工事/弹药库/地下等硬目标自动打 AP，软目标打 HE，尊重目标 `ImmuneShells` 属性避开无效弹种
-- **优先级排序**：6 级目标优先级 — FDC(6) > 火炮(5) > 弹药库/高价值/3★(4) > 装甲/工事/1★(3) > 普通(2) > 其他(1)。同级按综合时间成本排序（距离×2.56 + 角度差×0.30）
 
-铁巢坐标自动更新（TurretLocation 真实炮塔基准）
-敌人强制可见（VisibilityGroup.alpha→1 + State 0x80 清除）
-炮塔旋转重构(核心)
-方位驱动权 _bearingDriver: 双管异目标不再并行驱动共享炮塔(后写者赢致来回反向震荡)——先到先得单主驱动, 另一管让舵只追仰角; 击发段持锁者最高优先级
-静态目标只设一次 DesiredRotation(对齐上游 svr2kos2): 每帧重写干扰游戏目标动力学致物理反向
-弹打出即放手方位权(不等 BackToIdle 回位 13s), 另一管立即接管转位
+- **弹道自动解算**：自动设定装药、弹种、仰角与方向角
+- **智能弹种选择**：装甲/工事/弹药库/地下等硬目标自动打 AP，软目标打 HE，集群目标优先 APHE（便宜 + 高伤），尊重目标 `ImmuneShells` 属性避开无效弹种
+- **优先级排序**：6 级目标优先级 — FDC(6) > 火炮(5) > 弹药库/高价值/3★(4) > 装甲/工事/1★(3) > 普通(2) > 其他(1)。同级按综合时间成本排序（距离×2.56 + 角度差×0.30）
+- **覆盖判定**：落点 MEC 圆心，毁伤半径硬编码表（APHE=0.95km 用户实战调校），日志实时报告"覆盖 N 个目标 @距离"
 
 #### 手动模式
+
 - Numpad 1-4（或 Ctrl+1-4）对标记目标 T1~T4 手动下达打击任务
 - 面板切换弹种（正式版 20 种）、`Auto Fire` 自动击发、`Max Charge` 满装药（全自动/手动均生效）
 - **`Numpad 0`（或手柄 `Select`）一键切换全自动/手动**：全自动 = 雷达接管；手动 = 雷达完全休眠，切换时已在装填的任务自动打完（原子化）
 
 ### 开发体验
+
 - **F9 热重载**：修改 `IronNestFCS.Logic` 代码 → `dotnet build` → 切回游戏按 F9，无需重启
 - **IMGUI 状态面板**：实时显示两管炮当前任务、目标参数与队列情况
 
 ### 架构
 
-四个程序集改为三个，核心为热重载服务的宿主/逻辑分离设计：
+宿主/逻辑分离设计，核心为热重载服务：
 
 | 项目 | 角色 | 说明 |
 | --- | --- | --- |
@@ -71,7 +77,7 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 ### 安装（玩家）
 
 1. **MelonLoader**：下载 [MelonLoader.Installer.exe](https://melonwiki.xyz/)，选择游戏 exe 安装（IL2CPP 版）。游戏根目录出现 `MelonLoader/`
-2. **解压 Mod**：从 [Releases](https://github.com/KKTIME2024/IronNestFCS-Automat/releases) 下载 `IronNestFCS-Automat_vX.X.X.zip`，解压到游戏根目录，将 `Mods/`、`UserData/`、`UserLibs/` 三个文件夹与游戏目录合并
+2. **解压 Mod**：从 [Releases](https://github.com/High-cla/IronNestFCS-Automat/releases) 下载 `IronNestFCS_vX.X.X.zip`，解压到游戏根目录，将 `Mods/`、`UserData/`、`UserLibs/` 三个文件夹与游戏目录合并
 3. **启动验证**：左上角出现 IronNestFCS-Automat 面板即安装成功。若提示 `Dial 未绑定`，按 **F9** 重新绑定；游戏更新后失效则重新解压覆盖
 
 ### 构建（开发者）
@@ -84,13 +90,13 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 - `IronNestFCS.Logic/IronNestFCS.Logic.csproj`
 
 ```xml
-<GameDir>你的路径\IRON NEST Heavy Turret Simulator</GameDir>
+<GameDir>你的路径\Iron Nest Heavy Turret Simulator</GameDir>
 ```
 
 构建：
 
 ```bash
-dotnet build IronNestFCS.sln -c Release
+dotnet build IronNestFCS.sln
 ```
 
 输出位置：
@@ -140,41 +146,51 @@ Deep-fork of [svr2kos2](https://github.com/svr2kos2)'s original FCS (evolved via
 | Aspect | svr2kos2 upstream | This fork |
 | --- | --- | --- |
 | Turret rotation | Background coroutine grabs `_turretLock` — **rotation holds the shared traverse exclusively**, the other gun queues | **Rotation runs outside the lock** — both guns traverse in parallel; only the firing instant serializes (prevents accidental volley) |
-| Same-bearing salvo | None — lock-holder fires alone, other gun waits | **Salvo gate**: when both guns' target bearings differ ≤0.1° (moving targets: same entity only), both fire together — e.g. AP+HE on one target leave the barrels simultaneously |
+| Bearing ownership | Both guns drive the shared traverse on different targets (last writer wins, oscillation) | **Single master driver** (`_bearingDriver`, first come first served); the other gun only tracks elevation; lock-holder has top priority at firing; bearing released the moment the shell leaves |
+| Same-bearing salvo | None — lock-holder fires alone, other gun waits | **Salvo gate + rendezvous**: both guns fire together when target bearings differ ≤0.1° (moving targets: same entity only); the non-lock-holder waits for its partner to arm (60s timeout fallback) |
 | Rotation during loading | Traverse not moved while loading | **Rotates immediately during loading** — static targets pre-aim early; full-speed rotation (no per-frame target rewrite disturbing speed smoothing) |
 | Aim reference | `Player Turret Piece` (draggable marker, drifts) | **Auto-updated iron-nest coordinates** — real turret base (`TurretLocation`) + **self-healing 5s refresh** (late scene init / emergency drag auto-corrects) |
-| APHE composite shell card | None | **`APShellMod` card auto-injected each match** (ImpactRadius=1 / Damage=5 / BlastRadius=0.5km / Cost=5), merged into the existing APHE enum, idempotent skip |
+| Cluster strikes | None | **Cluster solving**: soft targets hit at the MEC center with HE/HCHE, APHE preferred for clusters; moving clusters masked per entity; 0.95km coverage radius (field-tuned) |
+| APHE composite shell card | None | **`APShellMod` card auto-injected each match** (ImpactRadius=1km / Damage=5 / Cost=5), merged into the existing APHE enum, idempotent skip |
+| Forced purchase | Limited by requisition points & card uses | **Decoupled from requisition points**: points refilled before every purchase click, limited cards charged to 99 uses, never out of shells |
 | Fire confirmation | 5 confirmation panels clicked sequentially (long ready-to-fire window) | **Confirmations parallel with arming** — all 5 tapped at 0.01s while the arming lever is held; ready-to-fire window ~2.2s → ~1.2s |
 | Enemy visibility | Relies on sighting/detection | **Force-visible**: `VisibilityGroup.alpha→1` + `State` 0x80 cleared, sweep independent of line of sight |
+| Map overlay | None | **Blast-radius visualization**: deep-red ring at the impact point (radius = kill radius, same source as the coverage check) + fire line + white dashes for moving targets |
+| Blast radius | Static hardcode | **Hardcoded deterministic values** (APHE=0.95km field-tuned) — cluster/coverage checks never drift with scene ShellDefinitions |
 | Dead code | — | ~209 lines removed (`GameStateWatcher` class etc.) |
 
 ### Core Features
 
 #### Numpad 0 — Full-auto Sweep (the main event)
+
 - Press **Numpad 0** to start/stop the sweep loop. Once active, zero manual input: scan → decide → strike → resupply → scan again, forever
 - **No numpad? Press Ctrl+0** instead (manual strikes also have Ctrl+1-4 fallbacks for Numpad 1-4); **gamepad users: press `Select`** to toggle
 - The radar reads the game's `FireMission.Entities` target registry directly
 - Dual-barrel scheduler: tasks are auto-assigned to idle guns; the next task starts the moment a barrel finishes cycling
-- Auto-purchases shells when the magazine runs low
+- Auto-purchases shells when the magazine runs low (forced purchase, decoupled from requisition points)
 - Auto valve tightening: detects steam leaks after firing and tightens the nearest dial
 
 #### Tactical Decisions
+
 - **Auto ballistic solving**: charge, shell type, elevation, and azimuth are set automatically
-- **Smart shell selection**: AP for armored/fortification/ammo/underground targets, HE for soft targets, always respecting the target's `ImmuneShells` to skip ineffective types
+- **Smart shell selection**: AP for armored/fortification/ammo/underground targets, HE for soft targets, APHE preferred for clusters (cheap + high damage), always respecting the target's `ImmuneShells` to skip ineffective types
 - **Priority system**: 6 tiers — FDC(6) > artillery(5) > ammo depot/high-value/3★(4) > armored/fortification/1★(3) > normal(2) > other(1); ties broken by combined cost (distance×2.56 + angle delta×0.30)
+- **Coverage check**: impact at MEC center; hardcoded kill-radius table (APHE=0.95km, field-tuned); log reports "covers N targets @distance"
 
 #### Manual Mode
+
 - Numpad 1-4 (or Ctrl+1-4) to manually dispatch strikes against markers T1~T4
 - Switch shell types (all 20 full-release types), toggle `Auto Fire`, and `Max Charge` from the console buttons
 - **`Numpad 0` (or gamepad `Select`) toggles auto/manual mode**: auto = radar takes over; manual = radar fully dormant, tasks already loading finish atomically
 
 ### Developer Experience
+
 - **F9 hot reload**: edit `IronNestFCS.Logic` → `dotnet build` → press F9 in-game. No restart needed
 - **IMGUI status panel**: live progress for both guns, target parameters, and queue depth
 
 ### Architecture
 
-Three projects, host/logic split to serve hot reload:
+Host/logic split, built for hot reload:
 
 | Project | Role | Notes |
 | --- | --- | --- |
@@ -185,7 +201,7 @@ Three projects, host/logic split to serve hot reload:
 ### Install (Players)
 
 1. **MelonLoader**: download [MelonLoader.Installer.exe](https://melonwiki.xyz/), point it at the game exe (IL2CPP). A `MelonLoader/` folder appears in the game root
-2. **Extract the mod**: download `IronNestFCS-Automat_vX.X.X.zip` from [Releases](https://github.com/KKTIME2024/IronNestFCS-Automat/releases) and extract into the game root, merging the three folders (`Mods/`, `UserData/`, `UserLibs/`)
+2. **Extract the mod**: download `IronNestFCS_vX.X.X.zip` from [Releases](https://github.com/High-cla/IronNestFCS-Automat/releases) and extract into the game root, merging the three folders (`Mods/`, `UserData/`, `UserLibs/`)
 3. **Launch**: the IronNestFCS-Automat panel in the top-left corner means success. If it says `Dial 未绑定`, press **F9** to rebind; re-extract the zip if a game update breaks it
 
 ### Build (Developers)
@@ -204,7 +220,7 @@ Change `GameDir` in both `.csproj` files to your game install path:
 Build:
 
 ```bash
-dotnet build IronNestFCS.sln -c Release
+dotnet build IronNestFCS.sln
 ```
 
 Output:
