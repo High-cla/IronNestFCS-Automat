@@ -17,7 +17,7 @@ public static class AphcheDeck
     /// <summary>注入卡的稳定 ID，TryBind/幂等检测都用它。</summary>
     public const string CardId = "APShellMod";
 
-    /// <summary>属性常量（用户调校 2026-08-15: 毁伤半径 1km, Damage 5。三处同步: 本常量/ShellData 兜底/FSC 特判）。</summary>
+    /// <summary>属性常量（用户确认 2026-08-15: 毁伤半径 1km, Damage 5。注入卡定义即游戏实际爆炸半径, 运行时精准表读它, 无特判覆盖）。</summary>
     public const float ImpactRadius = 1f;
     public const int ShellDamage = 5;
 

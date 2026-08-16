@@ -39,14 +39,14 @@ public static class ShellData
 
     /// <summary>硬编码兜底表(历史维基/实测校准, 2026-08-12)。
     /// 注意: 运行时精准表(ShellDefinition.ImpactRadius)正常加载时优先, 此表仅兜底。
-    /// APHE=0.25(用户实测 2026-08-15: 落点 0.37km 目标未杀伤) 与运行时注册一致——兜底路径不漂移。</summary>
+    /// APHE=0.5(用户确认, 10de1a2 原值)。运行时精准表正常加载时优先, 此表仅兜底。</summary>
     public static float HardcodedBlastRadiusKm(BulletType t) => t switch
     {
         BulletType.AP => 0.08f,
         BulletType.HE => 0.12f,
         BulletType.HCHE => 0.30f,
         BulletType.LE => 0.08f,   // 轻弹, 单点用; 半径与 AP 相同(用户确认)
-        BulletType.APHE => 1f, // 复合弹(用户调校 2026-08-15: 1km, 三处同步)
+        BulletType.APHE => 0.5f, // 特殊复合弹(用户确认, 回退 10de1a2 原值)
         _ => 0f
     };
 

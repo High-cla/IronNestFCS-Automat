@@ -141,7 +141,7 @@ public class FSC
 
     /// <summary>从已加载弹种定义(ScriptableObject)填充精准毁伤半径表 + 杀伤弹判定。
     /// 实测开局 21 弹种定义全部已加载(Resources.FindObjectsOfTypeAll); 缺的定义回退硬编码表。
-    /// APHE: 用户调校 2026-08-15 定 1km(注入卡定义同步 1f)——显式注册防场景切换回退硬编码。</summary>
+    /// 全部弹种(含 APHE)均读运行时精准值(ShellDefinition.ImpactRadius); 缺的定义回退硬编码表。</summary>
     private static void CacheShellRadiusTable() {
         try {
             foreach (var sd in Resources.FindObjectsOfTypeAll<ShellDefinition>()) {
@@ -151,8 +151,7 @@ public class FSC
                 ShellData.RegisterRuntimeRadius(t, sd.ImpactRadius);
                 ShellData.RegisterKillShell(t, sd.Damage > 0);
             }
-            ShellData.RegisterRuntimeRadius(BulletType.APHE, 1f);  // 用户调校 2026-08-15: APHE=1km(三处同步: 本特判/ShellData 兜底/AphcheDeck 注入卡)
-            MelonLogger.Msg("[FCS] 精准爆炸半径表已加载(ShellDefinition.ImpactRadius, APHE=1km 用户调校)");
+            MelonLogger.Msg("[FCS] 精准爆炸半径表已加载(ShellDefinition.ImpactRadius)");
         }
         catch (Exception ex) {
             MelonLogger.Error($"[FCS] CacheShellRadiusTable failed: {ex.Message}");
