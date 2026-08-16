@@ -13,7 +13,7 @@ A deep-fork of [svr2kos2](https://github.com/svr2kos2)'s FCS (tactical radar ins
 ### 这是什么
 
 为《铁巢：重炮模拟器》编写的 MelonLoader Mod。本仓库是 svr2kos2 原版 FCS 的分支：开启后 Mod 持续扫描全图敌情，自动完成弹道解算、弹种选择、采购装填、瞄准击发。**支持正式版全部 20 种弹种（采购卡自动识别）**。
-
+推荐搭配https://github.com/FooYou2497/Iron_Nest_MelonLoader_Mods
 ### 与上游的区别
 
 本仓库是 [svr2kos2](https://github.com/svr2kos2) 原版 FCS 的 deep-fork（经 [KKTIME2024](https://github.com/KKTIME2024/IronNestFCS-Automat) 演进，并已合并其 `da641f3` 齐射门 / `53bbbf0` 并行确认）。相对原版的关键差异：
