@@ -35,7 +35,7 @@ public static class ShellData
         BulletType.HE => 0.12f,
         BulletType.HCHE => 0.30f,
         BulletType.LE => 0.08f,   // 轻弹, 单点用; 半径与 AP 相同(用户确认)
-        BulletType.APHE => 0.5f, // 特殊复合弹(用户确认, 回退 10de1a2 原值)
+        BulletType.APHE => 0.95f, // 特殊复合弹(用户调校 2026-08-15: 0.95km, 与覆盖判定一致)
         _ => 0f
     };
 
