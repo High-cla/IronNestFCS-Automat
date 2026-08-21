@@ -1,6 +1,5 @@
-using System.Collections.Generic;
 using IronNestFCS.Logic.FCS;
-using MelonLoader;
+using Il2CppShapes;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -13,6 +12,8 @@ namespace IronNestFCS.Logic;
 ///   毁伤圈(描边环, 半径=task.BlastRadiusKm 注册表同源)
 ///   火力线(玩家→落点, 深红)
 ///   移动目标: 前进路线(白虚线固定长)
+/// 渲染: 游戏原生矢量库 Shapes(Il2CppShapesRuntime)——Disc(描边环) + Line(线/原生虚线),
+///   自带材质与抗锯齿, 无需 URP shader/自定义虚线贴图/圆环手算多边形。
 /// 1Hz tick, 按任务创建/销毁槽(dict), 对象挂 Draggable Surface 下(地图静态, 仅坐标帧一致)。
 /// 只读 FSC 公开 API, 保持 FSC 纯领域逻辑分离。Shutdown 销毁全部对象(热重载安全)。
 /// </summary>
@@ -22,8 +23,6 @@ public class MapOverlay
     private const float TickInterval = 1f;
     private const float PathLengthKm = 1.5f;        // 移动路径固定可见长度(km)
     private const float LineWidthWorld = 0.0075f;   // 线宽(世界单位, 用户确认再减半)
-    private const int CircleSegments = 48;
-    private const int DashSegments = 6;             // 移动路径虚线段数
     private const int OverlayQueue = 3500;          // 渲染队列: 压过透明航拍照片层(3000+), 深度并列时后画者胜(上游 64a0750)
 
     private static readonly Color LineColor = new(0.85f, 0.08f, 0.05f);   // 鲜红(火力线/毁伤圈, 深色地图上可见)
@@ -33,9 +32,6 @@ public class MapOverlay
     private readonly Transform? mapSurface;
     private readonly List<GameObject> tracked = new();          // 热重载时销毁
     private readonly Dictionary<ArtilleryTask, Slot> slots = new();
-    private Texture2D? dashTexture;                             // 虚线材质共享
-    private Material? lineMat;      // 共享实线材质(火力线/毁伤圈): N 实例→1, 材质切换/帧→1(上游 d39193a)
-    private Material? pathMat;      // 共享虚线材质(移动路径): 带纹理, 与实线必须分开
     private float lastTick;
 
     public MapOverlay(FSC fcs) {
@@ -45,9 +41,9 @@ public class MapOverlay
 
     /// <summary>一个任务对应的渲染槽(按任务创建/销毁)。</summary>
     private sealed class Slot {
-        public LineRenderer? ring;
-        public LineRenderer? fireLine;
-        public LineRenderer? path;
+        public Disc? ring;
+        public Line? fireLine;
+        public Line? path;
         public Vector3 lastImpact = new(float.MinValue, float.MinValue, float.MinValue);   // 落点变化检测哨兵
         public Vector3? frozenImpact;   // 击发锁存: 在飞期几何冻结(上游 9fb9455)
     }
@@ -75,22 +71,19 @@ public class MapOverlay
         foreach (var t in stale) { DestroySlot(slots[t]); slots.Remove(t); }
     }
 
-    /// <summary>热重载/卸载: 销毁全部渲染对象 + 共享材质。</summary>
+    /// <summary>热重载/卸载: 销毁全部渲染对象(Shapes 组件材质随 GameObject 销毁)。</summary>
     public void Shutdown() {
         foreach (var go in tracked) { if (go != null) Object.Destroy(go); }
         tracked.Clear();
         slots.Clear();
-        if (lineMat != null) { Object.Destroy(lineMat); lineMat = null; }   // 共享材质随热重载销毁
-        if (pathMat != null) { Object.Destroy(pathMat); pathMat = null; }
-        if (dashTexture != null) { Object.Destroy(dashTexture); dashTexture = null; }   // 虚线纹理同样是 Unity Object, 不销毁则每次热重载泄漏
     }
 
     // ==== 槽生命周期 ====
 
     private Slot CreateSlot() => new() {
-        ring = MakeLine("OverlayRing"),
-        fireLine = MakeLine("OverlayFireLine"),
-        path = MakeDashedLine("OverlayPath"),
+        ring = MakeRing("OverlayRing", LineColor),
+        fireLine = MakeLine("OverlayFireLine", LineColor, dashed: false),
+        path = MakeLine("OverlayPath", PathColor, dashed: true),
     };
 
     private void DestroySlot(Slot s) {
@@ -123,90 +116,66 @@ public class MapOverlay
 
         Vector3 player = fcs.MapTable.GetTurretLocal();
 
-        // 毁伤圈 + 火力线: 仅落点变化时重建(静态几何零更新)
+        // 毁伤圈 + 火力线: 仅落点变化时更新(静态几何零更新)
         if (impactChanged) {
-            // 毁伤圈: 描边环(半径=注册表同源数据)
-            if (s.ring != null && t.BlastRadiusKm > 0f) {
-                float rMap = t.BlastRadiusKm / ShellData.KmPerWorldUnit;
-                s.ring.loop = true;                          // 闭合描边
-                s.ring.startWidth = s.ring.endWidth = LineWidthWorld;   // 圈线宽 = 火力线同宽(用户确认, 不再自适应)
-                s.ring.positionCount = CircleSegments;
-                for (int i = 0; i < CircleSegments; i++) {
-                    float a = i * 2f * Mathf.PI / CircleSegments;
-                    s.ring.SetPosition(i, impact + new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * rMap);
+            // 毁伤圈: 描边环(Disc Ring, 半径=注册表同源数据), 圆心=落点
+            if (s.ring != null) {
+                if (t.BlastRadiusKm > 0f) {
+                    s.ring.gameObject.SetActive(true);
+                    s.ring.transform.localPosition = impact;
+                    s.ring.Radius = t.BlastRadiusKm / ShellData.KmPerWorldUnit;
+                } else {
+                    s.ring.gameObject.SetActive(false);   // 无毁伤半径数据时隐藏
                 }
             }
             // 火力线: 玩家 → 落点
             if (s.fireLine != null) {
-                s.fireLine.positionCount = 2;
-                s.fireLine.SetPosition(0, player);
-                s.fireLine.SetPosition(1, impact);
+                s.fireLine.Start = player;
+                s.fireLine.End = impact;
             }
         }
 
-        // 移动目标: 前进路线(白虚线)
+        // 移动目标: 前进路线(白虚线, Shapes 原生 dash)
         bool showPath = t.IsMoving && TargetLeadSolver.IsMoving(t.AimVel);
-        if (showPath) {
-            Vector3 now = fcs.MapTable.WorldToMapLocal(t.AimP0 + t.AimVel * (Time.time - t.AimStartTime));
-            float lenMap = PathLengthKm / ShellData.KmPerWorldUnit;
-            if (s.path != null) DrawDashed(s.path, now, now + t.AimVel.normalized * lenMap);
-        } else {
-            if (s.path != null) s.path.gameObject.SetActive(false);
-        }
-    }
-
-    // ==== 渲染对象工厂 ====
-
-    private LineRenderer MakeLine(string name) {
-        var go = NewChild(name);
-        var lr = go.AddComponent<LineRenderer>();
-        lr.useWorldSpace = false;              // 位置=父空间(map-local)
-        lr.positionCount = 0;
-        lr.startWidth = lr.endWidth = LineWidthWorld;
-        lr.loop = false;
-        if (lineMat == null) lineMat = MakeMat(LineColor);
-        if (lineMat != null) lr.material = lineMat;   // 直接共享赋值(不走 getter 克隆)
-        else FcsSceneInteractor.SetColor(go, LineColor);   // 无 URP shader 时退回旧行为
-        return lr;
-    }
-
-    private LineRenderer MakeDashedLine(string name) {
-        var go = NewChild(name);
-        var lr = go.AddComponent<LineRenderer>();
-        lr.useWorldSpace = false;
-        lr.positionCount = 0;
-        lr.startWidth = lr.endWidth = LineWidthWorld;
-        lr.loop = false;
-        if (pathMat == null) {
-            if (dashTexture == null) dashTexture = MakeDashTexture();
-            pathMat = MakeMat(PathColor);
-            if (pathMat != null && dashTexture != null) {
-                pathMat.mainTexture = dashTexture;
-                pathMat.mainTextureScale = new Vector2(DashSegments, 1f);   // 缩放定格在共享材质, 不再逐帧写
+        if (s.path != null) {
+            if (showPath) {
+                Vector3 now = fcs.MapTable.WorldToMapLocal(t.AimP0 + t.AimVel * (Time.time - t.AimStartTime));
+                float lenMap = PathLengthKm / ShellData.KmPerWorldUnit;
+                s.path.gameObject.SetActive(true);
+                s.path.Start = now;
+                s.path.End = now + t.AimVel.normalized * lenMap;
+            } else {
+                s.path.gameObject.SetActive(false);
             }
         }
-        if (pathMat != null) {
-            lr.material = pathMat;
-            if (pathMat.mainTexture != null) lr.textureMode = LineTextureMode.Tile;
-        } else {
-            FcsSceneInteractor.SetColor(go, PathColor);   // 无 URP shader 时退回旧行为
-        }
-        return lr;
     }
 
-    /// <summary>URP Unlit 共享材质工厂: 纯色一次定格 + queue 3500。返回 null 表示找不到 shader(调用方回退)。</summary>
-    private static Material? MakeMat(Color color) {
-        var shader = Shader.Find("Universal Render Pipeline/Unlit")
-                     ?? Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null) {
-            MelonLogger.Warning("[FCS] Can't find URP shader. Overlay falls back to per-object material.");
-            return null;
-        }
-        var mat = new Material(shader);
-        mat.color = color;
-        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
-        mat.renderQueue = OverlayQueue;
-        return mat;
+    // ==== 渲染对象工厂(Shapes 原生组件) ====
+
+    /// <summary>Shapes.Line 实线/虚线: 父空间(map-local)坐标, 世界单位线宽, queue 3500。</summary>
+    private Line MakeLine(string name, Color color, bool dashed) {
+        var go = NewChild(name);
+        var l = go.AddComponent<Line>();
+        l.Geometry = LineGeometry.Flat2D;             // 平铺地图面(而非始终朝相机)
+        l.ThicknessSpace = ThicknessSpace.Meters;     // 线宽=世界单位(与旧 LineRenderer 同尺度)
+        l.Thickness = LineWidthWorld;
+        l.Color = color;
+        l.Dashed = dashed;                            // 原生虚线开关(dash 尺寸用默认, 需要时再调)
+        l.RenderQueue = OverlayQueue;
+        return l;
+    }
+
+    /// <summary>Shapes.Disc 描边环(毁伤圈): 圆心=transform 局部位置, 半径/线宽=世界单位。</summary>
+    private Disc MakeRing(string name, Color color) {
+        var go = NewChild(name);
+        var d = go.AddComponent<Disc>();
+        d.Type = DiscType.Ring;                       // 仅描边(非填充盘)
+        d.RadiusSpace = ThicknessSpace.Meters;
+        d.ThicknessSpace = ThicknessSpace.Meters;
+        d.Thickness = LineWidthWorld;                 // 圈线宽 = 火力线同宽(用户确认)
+        d.Color = color;
+        d.RenderQueue = OverlayQueue;
+        return d;
     }
 
     private GameObject NewChild(string name) {
@@ -214,25 +183,5 @@ public class MapOverlay
         if (mapSurface != null) go.transform.SetParent(mapSurface, false);
         tracked.Add(go);
         return go;
-    }
-
-    /// <summary>白/透明条纹虚线贴图(LineRenderer Tile 模式用)。</summary>
-    private static Texture2D MakeDashTexture() {
-        var tex = new Texture2D(8, 1, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Repeat };
-        for (int x = 0; x < 8; x++) {
-            bool on = (x / 2) % 2 == 0;   // 4 像素亮 4 像素暗
-            tex.SetPixel(x, 0, on ? new Color(1f, 1f, 1f, 1f) : new Color(1f, 1f, 1f, 0f));
-        }
-        tex.Apply();
-        return tex;
-    }
-
-    /// <summary>两点间画虚线(纹理 Tile 模式, 段数由材质纹理缩放控制)。</summary>
-    private static void DrawDashed(LineRenderer lr, Vector3 a, Vector3 b) {
-        if (lr == null) return;
-        lr.positionCount = 2;
-        lr.SetPosition(0, a);
-        lr.SetPosition(1, b);
-        lr.gameObject.SetActive(true);   // 纹理缩放已定格在共享 pathMat, 不再逐帧访问材质
     }
 }

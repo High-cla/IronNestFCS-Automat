@@ -84,6 +84,11 @@
             <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\UnityEngine.AnimationModule.dll</HintPath>
             <Private>false</Private>
         </Reference>
+        <!-- 游戏原生矢量绘图库(Freya Holmér Shapes): MapOverlay 用 Shapes.Line/Disc 作图 -->
+        <Reference Include="Il2CppShapesRuntime">
+            <HintPath>$(GameDir)\MelonLoader\Il2CppAssemblies\Il2CppShapesRuntime.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
     </ItemGroup>
 
 </Project>
