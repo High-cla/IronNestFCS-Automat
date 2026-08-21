@@ -22,8 +22,8 @@ public class FcsSceneInteractor {
     // 每个地图目标对应一个按钮：targetId -> 按钮。点击=用当前弹种为该目标入队一个任务。
     private readonly Dictionary<int, GameObject> targetButtons = new();
 
-    public bool AutoFire = false;
-    public bool maxCharge = false;
+    public bool AutoFire = true;    // 默认自动开火(用户拍板 2026-08-22): 装填完成即自动扣扳机, 不等待玩家
+    public bool maxCharge = true;   // 默认满装药 6 包(用户拍板 2026-08-22)
 
     public FcsSceneInteractor(FSC fcs) {
         this.fcs = fcs;
