@@ -208,7 +208,17 @@ public class FSC
         if (IsBound && Time.time - _lastTurretSyncTime > 5f) {
             _lastTurretSyncTime = Time.time;
             _turretLocal = MapTable.GetTurretLocal();
+            SyncTurretPiece();   // 吸附: Piece 偏离固定 TurretLocation 时归位(容差 0.01f)
         }
+    }
+
+    /// <summary>炮塔 Piece 吸附到固定 TurretLocation 局部坐标。玩家可拖动 Piece, 拖动后基准漂移——
+    /// 偏离超 0.01f 才写回(避免每帧抖动)。TurretLocation 是坐标基准, 不受影响。</summary>
+    public void SyncTurretPiece() {
+        if (MapTable.Turret == null) return;
+        var target = MapTable.GetTurretLocal();
+        if ((MapTable.Turret.localPosition - target).magnitude > 0.01f)
+            MapTable.Turret.localPosition = target;
     }
 
     /// <summary>键盘快捷键触发射击目标（小键盘 1-4）</summary>
@@ -1010,6 +1020,7 @@ public class FSC
         {
             targetId = targetId,
             entityId = "",                                  // 位置提交(集群), 注册表按毁伤半径覆盖
+            entityName = ti.Name,
             angel = Bearing(impact),
             distance = DistKm(impact),
             position = impact,

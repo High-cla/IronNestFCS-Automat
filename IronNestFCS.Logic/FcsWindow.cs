@@ -87,8 +87,9 @@ public class FcsWindow
         foreach (var item in fcs.QueueCan)
         {
             string maxChargeTag = item.useMaxCharge ? " [MAX]" : "";
+            string itemName = string.IsNullOrEmpty(item.entityName) ? item.entityId : item.entityName;
             GUI.Label(new Rect(x, y, w, h),
-                $"  T{item.targetId}  {ConvertPosition(item.position)}  {item.angel,5:F1}°/{item.distance,5:F2}km  {item.bulletType}{maxChargeTag}");
+                $"  {itemName}  {item.bulletType}  {item.angel,5:F1}°/{item.distance,5:F2}km{maxChargeTag}");
             y += lineH;
         }
 
@@ -132,8 +133,9 @@ public class FcsWindow
         y += lineH;
 
         GUI.color = ClrLabel;
+        string targetName = string.IsNullOrEmpty(task.entityName) ? task.entityId : task.entityName;
         GUI.Label(new Rect(x + 12f, y, w - 12f, h),
-            $"Target: {task.angel:F1}° / {task.distance:F2}km");
+            $"Target: {targetName}  {task.angel:F1}° / {task.distance:F2}km");
         GUI.color = oldColor;
         y += lineH;
 

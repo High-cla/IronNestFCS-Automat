@@ -32,7 +32,10 @@ public class FcsModule : IFcsModule
         // APHE 特殊复合弹卡: 每局注入(幂等)。等 PunchcardRuntime 就绪, 由 AphcheDeck 内部轮询。
         // 所有场景都试注入, 找不到 Requisition Console 的素材卡时会安全退出。
         fcs.StartTrackedCoroutine(AphcheDeck.AddCardIfMissing(fcs.PurchaseDeck));
-        if (bound) ProbePunchcardRuntime();   // 诊断: 征用点数状态
+        if (bound) {
+            fcs.SyncTurretPiece();   // 开局吸附: Piece 归位到固定 TurretLocation
+            ProbePunchcardRuntime();   // 诊断: 征用点数状态
+        }
         return bound;
     }
 
@@ -92,6 +95,7 @@ public class FcsModule : IFcsModule
         {
             targetId = targetId,
             entityId = ti.EntityId,
+            entityName = ti.Name,
             angel = ti.Angle,
             distance = ti.Distance,
             position = ti.WorldPos,
