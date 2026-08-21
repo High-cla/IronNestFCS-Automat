@@ -33,6 +33,10 @@ public enum BulletType {
 public class GunSystem {
     private const float MinimumPostShotRecoverySeconds = 13f;
 
+    /// <summary>加速装填倍率。装填状态机由动画事件驱动(AnimationEvent_MoveShellToTransferSlot 等),
+    /// 提高动画播放速度后事件照常触发, 整个装填序列等比加速。调大更快。</summary>
+    private const float ReloadSpeedMultiplier = 10f;
+
     private string _surfix = "";
 
     private CylinderShellSelector? shellSelector;
@@ -92,6 +96,8 @@ public class GunSystem {
         reloadController = gunController?.artilleryReloadController;
         elevationLever = GameObject.Find(".Elevation Lever Baseplate")?.transform.FindChild(".Elevation Lever " + surfix)
             .GetComponent<LinearSliderInteractable>();
+
+        ApplyFastReload();
         return true;
     }
     
@@ -147,6 +153,18 @@ public class GunSystem {
     /// （游戏有转动动画/物理）。返回 IEnumerator，调用方用 yield return 等待它跑完。
     /// 必须走协程而非 async：continuation 要留在主线程才能安全访问 IL2CPP 对象。
     /// </summary>
+    /// <summary>加速装填: 提高 ArtilleryReloadController 全部动画的播放速度。
+    /// 动画事件(推弹/入膛)在采样跨过时照常逐个触发, 状态机序列不变, 仅等比加速。</summary>
+    public void ApplyFastReload() {
+        if (reloadController == null) return;
+        var animators = reloadController.animators;
+        if (animators == null) return;
+        foreach (var animator in animators) {
+            if (animator != null) animator.speed = ReloadSpeedMultiplier;
+        }
+        MelonLogger.Msg($"[FCS] GunSystem {_surfix}: 加速装填 x{ReloadSpeedMultiplier} 已应用({animators.Count} 个动画)");
+    }
+
     public IEnumerator LoadBullet(BulletType type) {
         // 上一发的退壳/炮闩/复位机构可能仍在工作。先等待真实机构状态空闲，
         // 再开始下一轮弹仓和推弹操作，避免连续射击时过早点击后续控件。
