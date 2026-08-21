@@ -24,6 +24,7 @@ public class MapOverlay
     private const float LineWidthWorld = 0.0075f;   // 线宽(世界单位, 用户确认再减半)
     private const int CircleSegments = 48;
     private const int DashSegments = 6;             // 移动路径虚线段数
+    private const int OverlayQueue = 3500;          // 渲染队列: 压过透明航拍照片层(3000+), 深度并列时后画者胜(上游 64a0750)
 
     private static readonly Color LineColor = new(0.85f, 0.08f, 0.05f);   // 鲜红(火力线/毁伤圈, 深色地图上可见)
     private static readonly Color PathColor = new(0.9f, 0.9f, 0.9f);      // 白(移动路径, 尺规语义)
@@ -33,6 +34,8 @@ public class MapOverlay
     private readonly List<GameObject> tracked = new();          // 热重载时销毁
     private readonly Dictionary<ArtilleryTask, Slot> slots = new();
     private Texture2D? dashTexture;                             // 虚线材质共享
+    private Material? lineMat;      // 共享实线材质(火力线/毁伤圈): N 实例→1, 材质切换/帧→1(上游 d39193a)
+    private Material? pathMat;      // 共享虚线材质(移动路径): 带纹理, 与实线必须分开
     private float lastTick;
 
     public MapOverlay(FSC fcs) {
@@ -45,6 +48,8 @@ public class MapOverlay
         public LineRenderer? ring;
         public LineRenderer? fireLine;
         public LineRenderer? path;
+        public Vector3 lastImpact = new(float.MinValue, float.MinValue, float.MinValue);   // 落点变化检测哨兵
+        public Vector3? frozenImpact;   // 击发锁存: 在飞期几何冻结(上游 9fb9455)
     }
 
     /// <summary>每帧调用, 内部 1Hz 节流。收集活动任务 → 更新/创建槽 → 销毁失效槽。</summary>
@@ -70,11 +75,14 @@ public class MapOverlay
         foreach (var t in stale) { DestroySlot(slots[t]); slots.Remove(t); }
     }
 
-    /// <summary>热重载/卸载: 销毁全部渲染对象。</summary>
+    /// <summary>热重载/卸载: 销毁全部渲染对象 + 共享材质。</summary>
     public void Shutdown() {
         foreach (var go in tracked) { if (go != null) Object.Destroy(go); }
         tracked.Clear();
         slots.Clear();
+        if (lineMat != null) { Object.Destroy(lineMat); lineMat = null; }   // 共享材质随热重载销毁
+        if (pathMat != null) { Object.Destroy(pathMat); pathMat = null; }
+        if (dashTexture != null) { Object.Destroy(dashTexture); dashTexture = null; }   // 虚线纹理同样是 Unity Object, 不销毁则每次热重载泄漏
     }
 
     // ==== 槽生命周期 ====
@@ -103,24 +111,37 @@ public class MapOverlay
             impactWorld = TargetLeadSolver.LeadPoint(t.AimP0, t.AimVel, Time.time - t.AimStartTime, tof);
         }
         Vector3 impact = fcs.MapTable.WorldToMapLocal(impactWorld);
+        // 击发锁存(上游 9fb9455): 弹已出膛, 在飞期落点冻结不再外推; 未击发清锁存(瞄准期正常更新)。
+        if (t.Fired) {
+            s.frozenImpact ??= impact;
+            impact = s.frozenImpact.Value;
+        } else {
+            s.frozenImpact = null;
+        }
+        bool impactChanged = (impact - s.lastImpact).sqrMagnitude > 1e-10f;
+        if (impactChanged) s.lastImpact = impact;
+
         Vector3 player = fcs.MapTable.GetTurretLocal();
 
-        // 毁伤圈: 描边环(半径=注册表同源数据)
-        if (s.ring != null && t.BlastRadiusKm > 0f) {
-            float rMap = t.BlastRadiusKm / ShellData.KmPerWorldUnit;
-            s.ring.loop = true;                          // 闭合描边
-            s.ring.startWidth = s.ring.endWidth = LineWidthWorld;   // 圈线宽 = 火力线同宽(用户确认, 不再自适应)
-            s.ring.positionCount = CircleSegments;
-            for (int i = 0; i < CircleSegments; i++) {
-                float a = i * 2f * Mathf.PI / CircleSegments;
-                s.ring.SetPosition(i, impact + new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * rMap);
+        // 毁伤圈 + 火力线: 仅落点变化时重建(静态几何零更新)
+        if (impactChanged) {
+            // 毁伤圈: 描边环(半径=注册表同源数据)
+            if (s.ring != null && t.BlastRadiusKm > 0f) {
+                float rMap = t.BlastRadiusKm / ShellData.KmPerWorldUnit;
+                s.ring.loop = true;                          // 闭合描边
+                s.ring.startWidth = s.ring.endWidth = LineWidthWorld;   // 圈线宽 = 火力线同宽(用户确认, 不再自适应)
+                s.ring.positionCount = CircleSegments;
+                for (int i = 0; i < CircleSegments; i++) {
+                    float a = i * 2f * Mathf.PI / CircleSegments;
+                    s.ring.SetPosition(i, impact + new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * rMap);
+                }
             }
-        }
-        // 火力线: 玩家 → 落点
-        if (s.fireLine != null) {
-            s.fireLine.positionCount = 2;
-            s.fireLine.SetPosition(0, player);
-            s.fireLine.SetPosition(1, impact);
+            // 火力线: 玩家 → 落点
+            if (s.fireLine != null) {
+                s.fireLine.positionCount = 2;
+                s.fireLine.SetPosition(0, player);
+                s.fireLine.SetPosition(1, impact);
+            }
         }
 
         // 移动目标: 前进路线(白虚线)
@@ -143,7 +164,9 @@ public class MapOverlay
         lr.positionCount = 0;
         lr.startWidth = lr.endWidth = LineWidthWorld;
         lr.loop = false;
-        FcsSceneInteractor.SetColor(go, LineColor);   // URP 纯色, 设到 renderer.material
+        if (lineMat == null) lineMat = MakeMat(LineColor);
+        if (lineMat != null) lr.material = lineMat;   // 直接共享赋值(不走 getter 克隆)
+        else FcsSceneInteractor.SetColor(go, LineColor);   // 无 URP shader 时退回旧行为
         return lr;
     }
 
@@ -154,14 +177,36 @@ public class MapOverlay
         lr.positionCount = 0;
         lr.startWidth = lr.endWidth = LineWidthWorld;
         lr.loop = false;
-        FcsSceneInteractor.SetColor(go, PathColor);
-        if (dashTexture == null) dashTexture = MakeDashTexture();
-        if (dashTexture != null) {
-            lr.textureMode = LineTextureMode.Tile;
-            var mat = lr.material;
-            if (mat != null) mat.mainTexture = dashTexture;
+        if (pathMat == null) {
+            if (dashTexture == null) dashTexture = MakeDashTexture();
+            pathMat = MakeMat(PathColor);
+            if (pathMat != null && dashTexture != null) {
+                pathMat.mainTexture = dashTexture;
+                pathMat.mainTextureScale = new Vector2(DashSegments, 1f);   // 缩放定格在共享材质, 不再逐帧写
+            }
+        }
+        if (pathMat != null) {
+            lr.material = pathMat;
+            if (pathMat.mainTexture != null) lr.textureMode = LineTextureMode.Tile;
+        } else {
+            FcsSceneInteractor.SetColor(go, PathColor);   // 无 URP shader 时退回旧行为
         }
         return lr;
+    }
+
+    /// <summary>URP Unlit 共享材质工厂: 纯色一次定格 + queue 3500。返回 null 表示找不到 shader(调用方回退)。</summary>
+    private static Material? MakeMat(Color color) {
+        var shader = Shader.Find("Universal Render Pipeline/Unlit")
+                     ?? Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null) {
+            MelonLogger.Warning("[FCS] Can't find URP shader. Overlay falls back to per-object material.");
+            return null;
+        }
+        var mat = new Material(shader);
+        mat.color = color;
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
+        mat.renderQueue = OverlayQueue;
+        return mat;
     }
 
     private GameObject NewChild(string name) {
@@ -188,11 +233,6 @@ public class MapOverlay
         lr.positionCount = 2;
         lr.SetPosition(0, a);
         lr.SetPosition(1, b);
-        var mat = lr.material;
-        if (mat != null && mat.mainTexture != null) {
-            mat.mainTextureScale = new Vector2(DashSegments, 1f);
-            mat.mainTextureOffset = Vector2.zero;
-        }
-        lr.gameObject.SetActive(true);
+        lr.gameObject.SetActive(true);   // 纹理缩放已定格在共享 pathMat, 不再逐帧访问材质
     }
 }
