@@ -1,7 +1,7 @@
 # 地图 Overlay 视觉设计 v2 —— 铁巢作战意图可视化
 
 - 日期：2026-08-13（视觉定稿）／2026-08-16（实现机制重定稿 v2）
-- 状态：**视觉设计定稿 + 实现方案定稿**；v1 实现（TextMeshPro/CreatePrimitive 路线）实测不可用已废弃，v2 全部渲染改用游戏自带 `Il2CppShapes.Line`
+- 状态：**视觉设计定稿 + 实现方案定稿**；v1 实现（TextMeshPro/CreatePrimitive 路线）实测不可用已废弃，v2 全部渲染改用游戏自带 `Il2CppShapes.Line`（实现机制切换于 2026-08-22 完成，见 [2026-08-22-map-overlay-native-shapes.md](2026-08-22-map-overlay-native-shapes.md)）
 - 范围：只做地图上叠加的 FCS 过程可视化，不改作战地图本体、不动 HUD 面板
 
 ## 目标
